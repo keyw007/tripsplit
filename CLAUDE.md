@@ -11,7 +11,7 @@
 - **離線優先**：旅途中常沒網路（山上），記帳要能離線，連上網路自動同步 → Firestore 離線快取（`persistentLocalCache`），寫入不 await。
 - **語音記帳**：zh-TW 規則解析（`js/parse.js`，離線可用），有網路且開 AI 時改用 Gemini 解析。
 - **拍明細自動拆帳**：Gemini 辨識店名、品項、稅、總額；每個品項可指定誰分攤，稅按比例分。離線拍的照片先存 IndexedDB「待辨識」。
-- **Firebase**：選它是為了日後多人同步。登入用**匿名**（iOS 主畫面 PWA 的 Google 彈窗不可靠），另有可選的「連結 Google 帳號」做跨手機備份（`linkWithPopup`；Google 帳號已綁過別台時用 `signInWithCredential` 切換）。
+- **Firebase**：選它是為了日後多人同步。登入用**匿名**（iOS 主畫面 PWA 的 Google 彈窗不可靠），另有可選的「連結 Google 帳號」做跨手機備份（`linkWithRedirect`，見「改版注意」；Google 帳號已綁過別台時用 `signInWithCredential` 切換）。
 - **多幣別**：每筆用當地幣別，結算依 `trip.rates` 換成結算幣別；結算用貪婪法算最少轉帳筆數。
 - 沒有建置工具：純 ES modules，Firebase JS SDK 13.2.0 從 gstatic 動態載入。
 
@@ -59,6 +59,6 @@ python3 tests/link_check.py /tmp/link      # 連結 Google 帳號流程
 
 ## 目前狀態（2026-11-06）
 
-- 已在 iPhone 實測：建立旅行、記帳、同步、收據辨識（AI＋App Check）成功。
-- 尚未實測：語音 AI 解析、連結 Google 帳號（iOS 主畫面 App 彈窗是否能回到 App）、邀請連結加入。
-- 可能的下一步：若 iOS 彈窗不行，改用 `linkWithRedirect`；日幣現金追蹤；匯率自動抓取。
+- 已在 iPhone 主畫面 App 實測成功：建立旅行、記帳、同步、收據辨識（AI＋App Check）、語音 AI 解析、連結 Google 帳號（1.2.7，redirect）。
+- 尚未實測：邀請連結加入、換手機用已綁定的 Google 帳號拿回旅行（`credential-already-in-use` → 切換帳號）。
+- 可能的下一步：日幣現金追蹤；匯率自動抓取。
