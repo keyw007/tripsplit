@@ -1,6 +1,6 @@
 // AI 辨識：拍收據自動拆品項、語音文字解析（需要網路）。
 // 透過 Firebase AI Logic 呼叫 Gemini Developer API，網頁裡不放 API key。
-import { FIREBASE_SDK, AI_MODELS } from './config.js';
+import { FIREBASE_SDK, AI_MODELS, APP_CHECK } from './config.js';
 import { getFb } from './firebase.js';
 import { CATEGORIES } from './parse.js';
 
@@ -10,9 +10,26 @@ const MODEL_KEY = 'ts_ai_model';
 
 async function ensureAi() {
   if (aiInstance) return aiInstance;
+  const app = getFb().app;
+  await ensureAppCheck(app);
   aiMod = await import(`${FIREBASE_SDK}/firebase-ai.js`);
-  aiInstance = aiMod.getAI(getFb().app, { backend: new aiMod.GoogleAIBackend() });
+  aiInstance = aiMod.getAI(app, { backend: new aiMod.GoogleAIBackend() });
   return aiInstance;
+}
+
+// Firebase AI Logic 需要 App Check 證明請求來自這個網站（用 reCAPTCHA，使用者不會看到驗證框）
+let appCheckReady = null;
+function ensureAppCheck(app) {
+  if (!APP_CHECK.key) return Promise.resolve();
+  if (!appCheckReady) {
+    appCheckReady = import(`${FIREBASE_SDK}/firebase-app-check.js`).then((ac) => {
+      const provider = APP_CHECK.type === 'enterprise'
+        ? new ac.ReCaptchaEnterpriseProvider(APP_CHECK.key)
+        : new ac.ReCaptchaV3Provider(APP_CHECK.key);
+      ac.initializeAppCheck(app, { provider, isTokenAutoRefreshEnabled: true });
+    }).catch((err) => { appCheckReady = null; throw err; });
+  }
+  return appCheckReady;
 }
 
 function modelOrder() {

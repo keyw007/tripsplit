@@ -1,6 +1,6 @@
 // 離線殼：App 檔案與 Firebase SDK 存在手機上，沒網路也能打開。
 // 帳目資料由 Firestore 自己的離線快取處理，這裡不攔截 Firestore 的連線。
-const VERSION = 'tripsplit-v1.1.0';
+const VERSION = 'tripsplit-v1.2.0';
 const SHELL = [
   './',
   './index.html',
@@ -18,7 +18,7 @@ const SHELL = [
   './icons/apple-touch-icon.png',
 ];
 const SDK = 'https://www.gstatic.com/firebasejs/13.2.0/';
-const SDK_FILES = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js', 'firebase-ai.js'].map((f) => SDK + f);
+const SDK_FILES = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js', 'firebase-ai.js', 'firebase-app-check.js'].map((f) => SDK + f);
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

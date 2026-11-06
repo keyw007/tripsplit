@@ -13,4 +13,8 @@ export const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/13.2.0';
 // 收據辨識與語音解析用的 Gemini 模型，依序嘗試，前一個不能用就換下一個
 export const AI_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
-export const APP_VERSION = '1.1.0';
+// App Check：Firebase AI Logic 自 2026/11/2 起強制要求。
+// type 'v3'（reCAPTCHA v3 網站金鑰）或 'enterprise'（reCAPTCHA Enterprise 金鑰）；key 空白代表還沒設定。
+export const APP_CHECK = { type: 'v3', key: '' };
+
+export const APP_VERSION = '1.2.0';
