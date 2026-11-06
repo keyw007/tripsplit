@@ -1,0 +1,16 @@
+// Firebase 網頁設定值：本來就會公開在前端，資料安全靠 firestore.rules。
+export const firebaseConfig = {
+  apiKey: 'AIzaSyBNJJ4R8B1WsXHutIsAS-VB_5QPF4udCOs',
+  authDomain: 'tripsplit-86d7e.firebaseapp.com',
+  projectId: 'tripsplit-86d7e',
+  storageBucket: 'tripsplit-86d7e.firebasestorage.app',
+  messagingSenderId: '797754761745',
+  appId: '1:797754761745:web:ace4c57c8ff46a97fa87b0',
+};
+
+export const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/13.2.0';
+
+// 收據辨識與語音解析用的 Gemini 模型，依序嘗試，前一個不能用就換下一個
+export const AI_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+
+export const APP_VERSION = '1.0.0';
