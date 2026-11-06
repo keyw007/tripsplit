@@ -1,6 +1,6 @@
 // 離線殼：App 檔案與 Firebase SDK 存在手機上，沒網路也能打開。
 // 帳目資料由 Firestore 自己的離線快取處理，這裡不攔截 Firestore 的連線。
-const VERSION = 'tripsplit-v1.2.1';
+const VERSION = 'tripsplit-v1.2.2';
 const SHELL = [
   './',
   './index.html',

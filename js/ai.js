@@ -43,7 +43,7 @@ async function appCheckDiagnosis() {
     const t = await appCheckMod.getToken(appCheckInst, true);
     return t?.token ? '已取得 App Check token，但伺服器不接受：請確認 Firebase App Check 已用 Fraud Defense 註冊這把金鑰' : '取不到 App Check token';
   } catch (e) {
-    return `取不到 App Check token：${e?.code || e?.message || e}`;
+    return `取不到 App Check token：${e?.message || e?.code || e}`;
   }
 }
 
