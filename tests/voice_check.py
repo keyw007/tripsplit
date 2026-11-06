@@ -1,4 +1,4 @@
-# 畫面測試：語音記帳（先顯示離線解析、AI 在背景補上；收音卡住的處理）。用法：python3 tests/voice_check.py [輸出資料夾]
+# 畫面測試：語音記帳（先顯示離線解析、AI 在背景補上；Android 收音卡住的處理；iPhone 改用鍵盤麥克風）。用法：python3 tests/voice_check.py [輸出資料夾]
 import sys, subprocess, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -26,7 +26,7 @@ AI_RESULT = {'title': '一蘭拉麵', 'amount': 2400, 'currency': 'JPY', 'payerN
 try:
     with sync_playwright() as p:
         b = p.chromium.launch(executable_path='/opt/pw-browsers/chromium', args=['--no-sandbox'])
-        ctx = b.new_context(**p.devices['iPhone 13'], service_workers='block', locale='zh-TW')
+        ctx = b.new_context(**p.devices['Pixel 7'], service_workers='block', locale='zh-TW')
         ctx.add_init_script(FAKE_SR)
         page = ctx.new_page()
         page.on('pageerror', lambda e: errors.append(str(e)))
@@ -85,6 +85,25 @@ try:
         close_sheet()
         page.click('[data-act=voice]')
         print('  再打開語音：收音鈕？%s；說明：%s' % (page.locator('#v-mic').count() > 0, '鍵盤上的麥克風' in page.inner_text('.sheet-body')))
+        ctx.close()
+
+        # 6. iPhone：沒有收音鈕、輸入框直接 focus（鍵盤會跳出）、照樣能解析
+        ctx = b.new_context(**p.devices['iPhone 13'], service_workers='block', locale='zh-TW')
+        ctx.add_init_script(FAKE_SR)
+        page = ctx.new_page()
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.route('**/js/firebase.js', lambda r: r.fulfill(path=str(REPO / 'tests/mock/firebase.js'), content_type='application/javascript'))
+        page.route('**/js/ai.js', lambda r: r.fulfill(path=str(REPO / 'tests/mock/ai.js'), content_type='application/javascript'))
+        page.goto('http://localhost:8769/'); page.wait_for_selector('text=新增旅行')
+        page.click('text=＋ 新增旅行'); page.fill('#nt-name', 'T'); page.fill('#nt-me', '郁文'); page.fill('#nt-others', '吳薰')
+        page.click('[data-act=nt-create]'); page.wait_for_selector('text=還沒有開支')
+        page.click('[data-act=voice]'); page.wait_for_selector('#v-text')
+        print('6 iPhone：收音鈕？%s；輸入框已 focus？%s；有取消鈕？%s；SR 被呼叫次數 %s' % (
+            page.locator('#v-mic').count() > 0, page.evaluate("document.activeElement?.id") == 'v-text',
+            page.locator('.sheet-body [data-act=close]').count() > 0, page.evaluate('window.__srStarts || 0')))
+        page.screenshot(path=str(OUT / '6_ios_voice.png'))
+        page.keyboard.type('咖啡 500 日圓 我付 只算我'); page.click('#v-parse'); page.wait_for_selector('#ed-source')
+        print('  解析後：%s，金額 %s' % (page.inner_text('#ed-source'), page.input_value('[data-k=amount]')))
         ctx.close(); b.close()
         print('OK')
 finally:

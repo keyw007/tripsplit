@@ -747,18 +747,22 @@ function sheetEditor(draftIn, { queueId = null, source: sourceIn = '', detail: d
 }
 
 // ---------- 語音記帳 ----------
-// iPhone 的語音辨識偶爾會卡住（不開始也不結束，WebKit 的已知問題），卡過一次通常要重開 App 才恢復。
-// 卡過就記下來，這次開 App 期間改用鍵盤上的麥克風。
+// iPhone 的網頁語音辨識會讓整個 App 卡死（實測 1.3.3：要滑掉 App 才能用，WebKit 已知問題），
+// 所以 iPhone 一律用鍵盤上的麥克風（就是 iOS 系統的聽寫，穩定）。
+// 其他平台（Android Chrome）保留收音鈕；萬一卡住，3 秒後自動停掉，這次開 App 期間改用鍵盤麥克風。
 let micBroken = false;
 
 function sheetVoice() {
-  const SR = micBroken ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const ios = platform() === 'ios';
+  const SR = ios || micBroken ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
   let rec = null;
   let watchdog = null;
   warmUpAiIfUsable();
-  const hint = micBroken
-    ? '<br>收音剛剛沒有反應，這次請點輸入框，用<b>鍵盤上的麥克風</b>說話（重開 App 後會恢復）。'
-    : SR ? '' : '<br>這個瀏覽器不支援直接收音，請點輸入框後用<b>鍵盤上的麥克風</b>說話。';
+  const hint = ios
+    ? '<br>按<b>鍵盤上的 🎤 麥克風</b>說話，說完按「解析」。'
+    : micBroken
+      ? '<br>收音剛剛沒有反應，這次請點輸入框，用<b>鍵盤上的麥克風</b>說話（重開 App 後會恢復）。'
+      : SR ? '' : '<br>這個瀏覽器不支援直接收音，請點輸入框後用<b>鍵盤上的麥克風</b>說話。';
   const body = openSheet((b) => {
     b.innerHTML = `<h3>🎤 語音記帳</h3>
       <p class="muted small" style="margin-top:-6px">說一句話，例如「午餐拉麵 2400 日圓 吳薰付 平分」「伴手禮 1580 台幣 我付 只算我」。${hint}</p>
@@ -769,7 +773,8 @@ function sheetVoice() {
   }, () => resetMic());
   const ta = body.querySelector('#v-text');
   const micBtn = body.querySelector('#v-mic');
-  if (!SR) setTimeout(() => ta.focus(), 250);
+  // 要在按下「語音」的同一個點擊裡 focus，iPhone 才會直接跳出鍵盤（用 setTimeout 會被擋）
+  if (!SR) ta.focus();
 
   // 不論收音是正常結束、出錯還是卡住，都回到可以再按的狀態
   function resetMic(msg) {

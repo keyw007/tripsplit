@@ -49,7 +49,7 @@
 - App 圖示：原稿 `icons/icon.svg`（行李箱＋日圓硬幣），`icons/icon-maskable.svg` 是縮到 76% 的版本。改完執行 `python3 tools/render_icons.py` 產生 PNG，並把 `index.html`、`manifest.webmanifest` 裡的 `?v=` 加一。iPhone 主畫面圖示是加入當下存下來的，要刪掉主畫面 App 再重新加入才會換。
 - AI 速度（1.3.1）：語音用最少思考（Gemini 3 `thinkingLevel: MINIMAL`／2.5 `thinkingBudget: 0`），收據用 `LOW`／`1024`；模型不接受思考設定時拿掉再試一次（`js/ai.js` 的 `thinkingFor`）。打開語音／拍明細畫面時 `warmUpAi()` 先載入 SDK 和 App Check token。記帳畫面標題會顯示花了幾秒（「AI 解析・2.1 秒」）。照片長邊 1600、JPEG 品質 0.72。
 - 語音流程（1.3.4）：按解析後**馬上**用離線解析打開記帳畫面（「離線解析・AI 解析中…」），AI 在背景跑，回來後 `sheetEditor` 回傳的 `apply()` 套用；使用者已改過欄位就不覆蓋，改顯示「套用」。實測模型回應 2.4–5.4 秒（準備 0 秒），所以不等 AI。
-- iOS 收音（WebKit 已知問題）：`webkitSpeechRecognition` 偶爾 start 後沒有任何事件、也不結束。看門狗：3 秒沒開始就 `abort()`、提示用鍵盤麥克風、這次開 App 期間（`micBroken`）不再顯示收音鈕；一次最多 20 秒；按停止 1.5 秒沒結束就強制停。
+- **iPhone 不用網頁收音**（1.3.5）：`webkitSpeechRecognition` 在 iPhone 主畫面 App 會讓整個 App 卡死、要滑掉才能用（1.3.3 實測，WebKit 已知問題，JS 看門狗救不了）。iPhone 一律用鍵盤上的麥克風（iOS 聽寫），打開語音畫面時在同一個點擊裡 `focus()` 輸入框讓鍵盤跳出。Android 保留收音鈕＋看門狗（3 秒沒開始就 `abort()`、`micBroken` 後改用鍵盤麥克風；一次最多 20 秒；按停止 1.5 秒沒結束就強制停）。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試
