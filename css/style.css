@@ -192,3 +192,8 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .mic-on { background: var(--neg) !important; color: #fff !important; }
 .receipt-thumb { width: 100%; max-height: 220px; object-fit: contain; border-radius: 10px; background: var(--bg); }
 .empty { text-align: center; padding: 40px 10px; color: var(--muted); }
+
+/* iOS 日期欄預設寬度會撐出畫面 */
+.row > .field { flex: 1; min-width: 0; }
+input[type=date] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; min-height: 46px; text-align: left; }
+input[type=date]::-webkit-date-and-time-value { text-align: left; }
