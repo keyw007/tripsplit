@@ -2,6 +2,7 @@
 import {
   initFirebase, waitForUser, watchMyTrips, watchTrip, watchExpenses, getTripOnce,
   createTrip, updateTrip, joinTrip, deleteTrip, saveExpense, deleteExpense, newId,
+  accountInfo, linkGoogle, switchToGoogle,
 } from './firebase.js';
 import {
   formatMoney, toBase, owedShares, amountSplitGap, computeBalances, settle,
@@ -184,6 +185,8 @@ function renderHome() {
       <button class="btn primary block" data-act="new-trip">＋ 新增旅行</button>
       <div style="height:10px"></div>
       <button class="btn block" data-act="join-paste">用邀請連結加入</button>
+      <div style="height:16px"></div>
+      ${renderAccountCard()}
       <p class="muted small" style="text-align:center;margin-top:24px">v${APP_VERSION}</p>
     </main>`;
 }
@@ -372,7 +375,57 @@ function tabSettings() {
     <div class="card"><h2>資料</h2>
       <button class="btn block" data-act="export">匯出 CSV（可匯入 Google 試算表）</button>
       ${isOwner ? '<div style="height:8px"></div><button class="btn danger block" data-act="delete-trip">刪除這趟旅行</button>' : ''}
-      <p class="muted small">v${APP_VERSION}・帳號 ${esc(S.user.uid.slice(0, 6))}</p></div>`;
+      <p class="muted small">v${APP_VERSION}・帳號 ${esc(S.user.uid.slice(0, 6))}</p></div>
+    ${renderAccountCard()}`;
+}
+
+// ---------- 帳號（Google 備份） ----------
+function isStandalone() {
+  return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+}
+
+function renderAccountCard() {
+  const a = accountInfo();
+  if (!a.isAnonymous) {
+    return `<div class="card"><h2>帳號</h2>
+      <div>✅ 已綁定 Google${a.email ? `：${esc(a.email)}` : ''}</div>
+      <p class="muted small">換手機時，在新手機打開 tripsplit，按「連結 Google 帳號」選同一個 Google 帳號，就能拿回所有旅行。</p></div>`;
+  }
+  return `<div class="card"><h2>帳號</h2>
+    <div>匿名帳號（只存在這支手機）</div>
+    <p class="muted small">綁定 Google 後，換手機或清掉瀏覽器資料，用同一個 Google 帳號登入就能拿回所有旅行與帳目。平常照樣不用登入。</p>
+    <button class="btn block" data-act="link-google">連結 Google 帳號</button>
+    ${isStandalone() ? '<p class="muted small">若 Google 視窗登入後沒有自動回到 App，回到 App 再按一次即可。請在這個 App 裡綁定，不要在 Safari 分頁綁定（兩邊的帳號是分開的）。</p>' : ''}
+  </div>`;
+}
+
+const LINK_ERRORS = {
+  'auth/popup-blocked': '登入視窗被擋住了，請允許彈出視窗後再試一次',
+  'auth/popup-closed-by-user': '已取消',
+  'auth/cancelled-popup-request': '已取消',
+  'auth/network-request-failed': '需要網路才能綁定 Google',
+  'auth/operation-not-allowed': 'Firebase 還沒啟用 Google 登入方式',
+  'auth/unauthorized-domain': '這個網址還沒加入 Firebase 授權網域',
+};
+
+async function doLinkGoogle() {
+  // 必須在點擊當下就開視窗，否則會被瀏覽器擋住
+  const p = linkGoogle();
+  try {
+    const r = await p;
+    if (r.status === 'exists') {
+      const ok = confirm('這個 Google 帳號已經綁過另一個 tripsplit 帳號（例如舊手機）。\n\n要改用它嗎？改用後會看到舊帳號的旅行；這支手機目前加入的旅行，之後可以用邀請連結重新加入。');
+      if (!ok) return;
+      await switchToGoogle(r.cred);
+      location.reload();
+      return;
+    }
+    toast('已綁定 Google 帳號');
+    render();
+  } catch (err) {
+    console.error('[linkGoogle]', err);
+    toast(LINK_ERRORS[err.code] || `綁定失敗：${err.code || err.message}`, 4000);
+  }
 }
 
 // ---------- 新增旅行 ----------
@@ -888,6 +941,7 @@ document.addEventListener('click', async (ev) => {
       toast('已儲存');
       break;
     }
+    case 'link-google': doLinkGoogle(); break;
     case 'export': exportCsv(); break;
     case 'delete-trip':
       if (confirm(`確定刪除「${t.name}」？所有人都會看不到這趟旅行。`)) { deleteTrip(t.id); go('#/'); }

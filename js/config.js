@@ -13,4 +13,4 @@ export const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/13.2.0';
 // 收據辨識與語音解析用的 Gemini 模型，依序嘗試，前一個不能用就換下一個
 export const AI_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';

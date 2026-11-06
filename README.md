@@ -9,6 +9,7 @@
 - **拍明細**：拍收據後 Gemini 自動辨識店名、品項、總額，可以逐項指定由誰分攤，稅金按比例分配；沒網路時照片先存著，有網路再辨識
 - **結算**：自動算出最少筆數的轉帳，按「已付款」記一筆轉帳
 - **匯出 CSV**：可以匯入 Google 試算表
+- **Google 備份**：平常匿名使用；按「連結 Google 帳號」綁定後，換手機用同一個 Google 帳號就能拿回所有旅行
 
 ## 架構
 
@@ -19,7 +20,7 @@
 | `js/app.js` | 畫面、路由、記帳流程 |
 | `js/money.js` | 換匯、分攤、餘額、結算（純函式） |
 | `js/parse.js` | 語音／文字離線解析（純函式） |
-| `js/firebase.js` | 匿名登入、Firestore 讀寫 |
+| `js/firebase.js` | 匿名登入、Google 綁定、Firestore 讀寫 |
 | `js/ai.js` | Firebase AI Logic（Gemini）收據與文字辨識 |
 | `js/store.js` | 本機設定、待辨識照片佇列（IndexedDB） |
 | `sw.js` | 離線殼快取 |
@@ -27,7 +28,7 @@
 
 ## Firebase 設定
 
-1. Authentication → 登入方式 → 啟用 **匿名**（Anonymous）
+1. Authentication → 登入方式 → 啟用 **匿名**（Anonymous）和 **Google**
 2. Authentication → 設定 → 授權網域 → 加入 `keyw007.github.io`
 3. Firestore Database → 建立資料庫（正式環境模式）→ 規則：貼上 `firestore.rules` 內容並發布
 4. AI Logic → 開始使用 → Gemini Developer API

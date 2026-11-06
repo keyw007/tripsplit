@@ -9,6 +9,10 @@ const user = { uid: 'user-me' };
 export async function initFirebase() { return { app: {} }; }
 export function getFb() { return { app: {} }; }
 export async function waitForUser() { return user; }
+let linkedEmail = '';
+export function accountInfo() { return { uid: user.uid, isAnonymous: !linkedEmail, email: linkedEmail }; }
+export async function linkGoogle() { linkedEmail = 'keyw007@gmail.com'; return { status: 'linked' }; }
+export async function switchToGoogle() {}
 export function newId() { seq += 1; return `id${seq}${Math.random().toString(36).slice(2, 6)}`; }
 
 function emitTrips() {

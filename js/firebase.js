@@ -42,6 +42,41 @@ export function waitForUser() {
   });
 }
 
+// ---------- Google 帳號備份 ----------
+
+export function accountInfo() {
+  const u = fb.auth.currentUser;
+  const google = u?.providerData?.find((p) => p.providerId === 'google.com');
+  return { uid: u?.uid, isAnonymous: !!u?.isAnonymous, email: google?.email || '' };
+}
+
+// 把目前的匿名帳號綁到 Google（uid 不變，旅行與帳目都留著）。
+// 這個 Google 帳號若已綁過別的手機，回傳 { status: 'exists', cred }，由畫面詢問要不要改用它。
+export async function linkGoogle() {
+  const { auth, au } = fb;
+  const provider = new au.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try {
+    if (auth.currentUser?.isAnonymous) {
+      await au.linkWithPopup(auth.currentUser, provider);
+      return { status: 'linked' };
+    }
+    await au.signInWithPopup(auth, provider);
+    return { status: 'signed-in' };
+  } catch (err) {
+    if (err.code === 'auth/credential-already-in-use' || err.code === 'auth/email-already-in-use') {
+      return { status: 'exists', cred: au.GoogleAuthProvider.credentialFromError(err) };
+    }
+    throw err;
+  }
+}
+
+// 改用已綁過的 Google 帳號（換手機時用）
+export async function switchToGoogle(cred) {
+  const { auth, au } = fb;
+  await au.signInWithCredential(auth, cred);
+}
+
 export function newId() {
   const { fs, db } = fb;
   return fs.doc(fs.collection(db, '_ids')).id;
