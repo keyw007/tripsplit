@@ -2,7 +2,7 @@
 // 使用者在 Google 試算表選取含標題列的範圍 → 複製 → 貼到 App（Tab 分隔），或匯入下載的 CSV。
 // 依標題名稱找欄位，所以欄位順序可以不同、可以多出其他欄。認得的欄位：
 //   日期、項目（或 名稱／標題）、類別、TWD（或 台幣）、JPY（或 日圓／日幣）、
-//   「<成員名字> 先付」（或「<名字>付」）、付款方式、狀態、備註、各自付
+//   「<成員名字> 先付」（或「<名字>付」，或範本的「旅伴A 先付」＝第一位成員）、付款方式、狀態、備註、各自付
 import { guessCategory } from './parse.js';
 
 // Tab 分隔或 CSV（支援雙引號、引號內換行）
@@ -74,6 +74,12 @@ function columnsOf(header, members) {
     const i = header.findIndex((h) => h.includes(m.name) && /付/.test(h));
     if (i >= 0) payerCols.push({ i, id: m.id });
   }
+  // 範本的「旅伴A 先付」「旅伴B 先付」…：沒改成名字時，A 對應 App 裡第一位成員，B 第二位，依此類推
+  header.forEach((h, i) => {
+    const m = h.match(/^旅伴\s*([A-Z])\s*先?付/i);
+    const member = m && members[m[1].toUpperCase().charCodeAt(0) - 65];
+    if (member && !payerCols.some((c) => c.id === member.id)) payerCols.push({ i, id: member.id });
+  });
   return {
     date: find(/日期/),
     title: find(/^(項目|名稱|標題|品項|內容)/),

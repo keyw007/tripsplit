@@ -89,3 +89,12 @@ test('匯入：AI 結果轉成清單', async () => {
   assert.deepEqual([out[0].payerId, out[0].checked, out[0].payMethod], ['a', true, 'card']);
   assert.deepEqual([out[1].currency, out[1].category, out[1].date], ['TWD', 'transport', '2026-12-26']);
 });
+
+test('匯入：範本的「旅伴A 先付」對應第一位成員', () => {
+  const rows = parseTable(['日期\t項目\t類別\tTWD\tJPY\t約 TWD\t旅伴A 先付\t旅伴B 先付\t旅伴C 先付\t旅伴D 先付\t付款方式\t狀態\t備註\t各自付',
+    '12/25\t飯店\t住宿\t2,700\t\t2,700\tFALSE\tTRUE\tFALSE\tFALSE\t台幣刷卡\t已付\t\tFALSE'].join('\n'));
+  const { items, error } = rowsToItems(rows, { members, today });
+  assert.equal(error, '');
+  assert.equal(items[0].payerId, 'b');
+  assert.equal(items[0].checked, true);
+});
