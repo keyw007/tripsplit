@@ -198,7 +198,7 @@ function renderHome() {
       <div style="height:16px"></div>
       ${renderAccountCard()}
       <a class="btn block" href="#/help">📖 使用說明</a>
-      <p class="muted small" style="text-align:center;margin-top:24px">v${APP_VERSION}</p>
+      ${versionButton()}
     </main>`;
 }
 
@@ -387,16 +387,20 @@ function tabSettings() {
     <div class="card"><h2>資料</h2>
       <button class="btn block" data-act="export">匯出 CSV（可匯入 Google 試算表）</button>
       ${isOwner ? '<div style="height:8px"></div><button class="btn danger block" data-act="delete-trip">刪除這趟旅行</button>' : ''}
-      <p class="muted small">v${APP_VERSION}・帳號 ${esc(S.user.uid.slice(0, 6))}</p></div>
+      <p class="muted small"><button class="link-btn" data-act="check-update">v${APP_VERSION}（點此檢查更新）</button>・帳號 ${esc(S.user.uid.slice(0, 6))}</p></div>
     ${renderAccountCard()}
     <a class="btn block" href="#/help">📖 使用說明</a>`;
+}
+
+function versionButton() {
+  return `<p class="muted small" style="text-align:center;margin-top:24px"><button class="link-btn" data-act="check-update">v${APP_VERSION}・點此檢查更新</button></p>`;
 }
 
 // ---------- 使用說明 ----------
 function renderHelp() {
   $app.innerHTML = `
     <header class="topbar"><a class="icon-btn" href="#/" data-act="back" aria-label="返回">‹</a><h1>使用說明</h1></header>
-    <main>${helpHtml()}<p class="muted small" style="text-align:center;margin-top:24px">v${APP_VERSION}</p></main>`;
+    <main>${helpHtml()}${versionButton()}</main>`;
 }
 
 // 還沒加入主畫面時，在首頁提醒（iPhone 的 Safari 分頁和主畫面 App 是不同帳號，特別重要）
@@ -897,6 +901,7 @@ document.addEventListener('click', async (ev) => {
     case 'close': closeSheet(); break;
     case 'new-trip': sheetNewTrip(); break;
     case 'nt-create': doCreateTrip(); break;
+    case 'check-update': checkForUpdateNow(); break;
     case 'back': {
       // 從 App 內其他頁面進來就回上一頁，直接打開說明頁時回首頁
       ev.preventDefault();
@@ -1067,17 +1072,32 @@ function isNewer(a, b) {
 }
 
 let lastUpdateCheck = 0;
+// 回傳 { status: 'newer'|'latest'|'offline'|'skipped'|'error', server, detail }
 async function checkForUpdate(force = false) {
-  if (!navigator.onLine || document.visibilityState !== 'visible') return;
-  if (!force && Date.now() - lastUpdateCheck < 60 * 1000) return; // 一分鐘內不重複檢查
+  if (!navigator.onLine) return { status: 'offline' };
+  if (!force && (document.visibilityState !== 'visible' || Date.now() - lastUpdateCheck < 60 * 1000)) return { status: 'skipped' }; // 一分鐘內不重複檢查
   lastUpdateCheck = Date.now();
   navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
   try {
     const res = await fetch(`js/config.js?vcheck=${Date.now()}`, { cache: 'no-store' });
-    if (!res.ok) return;
+    if (!res.ok) return { status: 'error', detail: `HTTP ${res.status}` };
     const m = (await res.text()).match(/APP_VERSION\s*=\s*'([\d.]+)'/);
-    if (m && isNewer(m[1], APP_VERSION)) showUpdateBar(m[1]);
-  } catch { /* 沒網路或連不上，下次再試 */ }
+    if (!m) return { status: 'error', detail: '找不到版本號' };
+    if (isNewer(m[1], APP_VERSION)) { showUpdateBar(m[1]); return { status: 'newer', server: m[1] }; }
+    return { status: 'latest', server: m[1] };
+  } catch (err) {
+    return { status: 'error', detail: String(err?.message || err) }; // 沒網路或連不上，下次再試
+  }
+}
+
+// 點版本號：立刻檢查一次並告訴使用者結果
+async function checkForUpdateNow() {
+  toast('檢查更新中…', 1500);
+  const r = await checkForUpdate(true);
+  if (r.status === 'latest') toast(`已是最新版 v${APP_VERSION}`);
+  else if (r.status === 'offline') toast('目前沒有網路，無法檢查更新');
+  else if (r.status === 'error') toast(`檢查更新失敗：${r.detail}`, 4000);
+  // newer：上方已顯示「有新版本」
 }
 
 function showUpdateBar(version) {

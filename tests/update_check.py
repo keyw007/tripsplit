@@ -27,12 +27,15 @@ try:
         assert page.evaluate('!!navigator.serviceWorker.controller'), 'SW 沒接管'
         page.wait_for_timeout(3500)
         print('同版本時有提示？', page.locator('#update-bar').count())
+        page.click('[data-act=check-update]'); page.wait_for_selector('#toast:has-text("已是最新版")', timeout=5000)
+        print('點版本號（同版本）：', page.inner_text('#toast'))
+        page.screenshot(path=str(OUT / 'latest_toast.png'))
         # 伺服器換成新版本
         cfg.write_text(re.sub(r"APP_VERSION = '[\d.]+'", "APP_VERSION = '9.9.9'", orig))
         page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # 一分鐘內會被略過
         page.wait_for_timeout(500)
         print('一分鐘內重複檢查被略過？', page.locator('#update-bar').count() == 0)
-        page.evaluate("window.dispatchEvent(new Event('online'))")  # 強制檢查
+        page.click('[data-act=check-update]')  # 點版本號立刻檢查
         page.wait_for_selector('#update-bar', timeout=5000)
         print('提示文字：', page.inner_text('#update-bar').replace('\n', ' '))
         page.screenshot(path=str(OUT / 'update_bar.png'))
@@ -43,6 +46,8 @@ try:
         # 離線時打開仍正常（快取沒被 vcheck 弄壞）
         ctx.set_offline(True); page.reload(); page.wait_for_selector('text=匿名帳號', timeout=8000)
         print('離線重開正常')
+        page.click('[data-act=check-update]'); page.wait_for_selector('#toast:has-text("沒有網路")', timeout=5000)
+        print('離線點版本號：', page.inner_text('#toast'))
         ctx.close(); b.close()
 finally:
     srv.terminate(); shutil.rmtree(REPO.parent, ignore_errors=True)

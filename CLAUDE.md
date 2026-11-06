@@ -43,7 +43,7 @@
 ## 改版注意
 
 - 每次改動要同時調高 `js/config.js` 的 `APP_VERSION` 與 `sw.js` 的 `VERSION`，首頁最下面會顯示版本，方便確認手機拿到新版。
-- 自動檢查更新（1.3.0 起）：回到前景、每 30 分鐘、重新連網時抓 `js/config.js?vcheck=…`（`sw.js` 對 `vcheck` 不走快取）比對 `APP_VERSION`，較新就在上方顯示「有新版本・更新」，按了才 `location.reload()`。所以 **`APP_VERSION` 的格式要維持 `export const APP_VERSION = 'x.y.z';`**。手機上也可以滑掉 App 重開拿新版。
+- 自動檢查更新（1.3.0 起）：回到前景、每 30 分鐘、重新連網時抓 `js/config.js?vcheck=…`（`sw.js` 對 `vcheck` 不走快取）比對 `APP_VERSION`，較新就在上方顯示「有新版本・更新」，按了才 `location.reload()`。所以 **`APP_VERSION` 的格式要維持 `export const APP_VERSION = 'x.y.z';`**。點首頁、說明頁或旅行設定頁的版本號會立刻檢查（`checkForUpdateNow`），顯示「已是最新版」、沒網路或失敗原因。手機上也可以滑掉 App 重開拿新版。
 - `initializeAuth` 必須帶 `popupRedirectResolver`，否則 Google 登入直接丟 `auth/argument-error`。用子類別關掉 `_shouldInitProactively`，避免 iOS 啟動時連網路拖慢離線開 App。畫面測試用 mock，抓不到這類 SDK 設定錯誤。
 - 連結 Google 用 **redirect**（`linkWithRedirect` ＋ 啟動時 `getRedirectResult`）。popup 在 iOS 主畫面 App 會開到 Safari，儲存空間不同，App 收不到結果（1.2.6 實測失敗）。redirect 要求登入元件與 App 同網域，所以 `authDomain` 是 `keyw007.github.io`，登入元件放在 `keyw007/keyw007.github.io` repo 的 `__/auth/`，Google Cloud OAuth 用戶端已加轉址 `https://keyw007.github.io/__/auth/handler`。
 - App 圖示：原稿 `icons/icon.svg`（行李箱＋日圓硬幣），`icons/icon-maskable.svg` 是縮到 76% 的版本。改完執行 `python3 tools/render_icons.py` 產生 PNG，並把 `index.html`、`manifest.webmanifest` 裡的 `?v=` 加一。iPhone 主畫面圖示是加入當下存下來的，要刪掉主畫面 App 再重新加入才會換。
