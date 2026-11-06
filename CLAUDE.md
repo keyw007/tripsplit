@@ -60,6 +60,6 @@ python3 tests/link_check.py /tmp/link      # 連結 Google 帳號流程
 
 ## 目前狀態（2026-11-06）
 
-- 已在 iPhone 主畫面 App 實測成功：建立旅行、記帳、同步、收據辨識（AI＋App Check）、語音 AI 解析、連結 Google 帳號（1.2.7，redirect）。
-- 尚未實測：邀請連結加入、換手機用已綁定的 Google 帳號拿回旅行（`credential-already-in-use` → 切換帳號）。
+- 已在 iPhone 主畫面 App 實測成功：建立旅行、記帳、同步、收據辨識（AI＋App Check）、語音 AI 解析、連結 Google 帳號（1.2.7，redirect）、刪掉主畫面 App 重新加入後用同一個 Google 帳號拿回旅行（1.2.8，`credential-already-in-use` → 確認 → 切換帳號）。
+- 尚未實測：邀請連結加入（吳薰的手機）。
 - 可能的下一步：日幣現金追蹤；匯率自動抓取。
