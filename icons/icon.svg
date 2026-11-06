@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- App 圖示原稿：行李箱＋日圓硬幣。改這個檔後重新產生 icons/*.png（見 CLAUDE.md） -->
+  <rect width="1024" height="1024" fill="#0f766e"/>
+  <!-- 行李箱 -->
+  <rect x="392" y="190" width="200" height="110" rx="40" fill="none" stroke="#fff" stroke-width="44"/>
+  <rect x="232" y="280" width="520" height="520" rx="80" fill="#fff"/>
+  <rect x="352" y="280" width="44" height="520" fill="#0f766e" opacity=".18"/>
+  <rect x="588" y="280" width="44" height="520" fill="#0f766e" opacity=".18"/>
+  <!-- 硬幣 -->
+  <circle cx="710" cy="740" r="190" fill="#fbbf24" stroke="#0f766e" stroke-width="36"/>
+  <text x="710" y="812" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="220" fill="#0f766e">¥</text>
+</svg>
