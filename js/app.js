@@ -1043,6 +1043,52 @@ window.addEventListener('hashchange', () => { S.navCount = (S.navCount || 0) + 1
 window.addEventListener('online', () => { S.online = true; render(); if (S.receipts.length) toast(`有 ${S.receipts.length} 張明細可以辨識了`); });
 window.addEventListener('offline', () => { S.online = false; render(); });
 
+// ---------- 自動檢查更新 ----------
+// App 在背景放著時不會重新載入（iPhone 可能好幾天都是同一個畫面），
+// 所以回到前景、每 30 分鐘、重新連上網路時，直接問伺服器目前的版本號。
+// 有新版只顯示提示，由使用者按「更新」才重新載入，避免打到一半的開支不見。
+function isNewer(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+
+let lastUpdateCheck = 0;
+async function checkForUpdate(force = false) {
+  if (!navigator.onLine || document.visibilityState !== 'visible') return;
+  if (!force && Date.now() - lastUpdateCheck < 60 * 1000) return; // 一分鐘內不重複檢查
+  lastUpdateCheck = Date.now();
+  navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {});
+  try {
+    const res = await fetch(`js/config.js?vcheck=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const m = (await res.text()).match(/APP_VERSION\s*=\s*'([\d.]+)'/);
+    if (m && isNewer(m[1], APP_VERSION)) showUpdateBar(m[1]);
+  } catch { /* 沒網路或連不上，下次再試 */ }
+}
+
+function showUpdateBar(version) {
+  let bar = document.getElementById('update-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'update-bar';
+    bar.setAttribute('role', 'status');
+    document.body.appendChild(bar);
+    bar.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-upd=later]')) { bar.remove(); return; }
+      if (ev.target.closest('[data-upd=go]')) location.reload();
+    });
+  }
+  bar.innerHTML = `<span class="grow">有新版本 v${esc(version)}</span><button class="btn" data-upd="later">稍後</button><button class="btn primary" data-upd="go">更新</button>`;
+}
+
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+window.addEventListener('online', () => checkForUpdate(true));
+setInterval(() => checkForUpdate(true), 30 * 60 * 1000);
+
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW', e));
   try {
@@ -1061,6 +1107,7 @@ async function boot() {
   });
   render();
   if (S.online) handleGoogleRedirect();
+  setTimeout(() => checkForUpdate(true), 3000);
 }
 
 boot();

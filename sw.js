@@ -1,6 +1,6 @@
 // 離線殼：App 檔案與 Firebase SDK 存在手機上，沒網路也能打開。
 // 帳目資料由 Firestore 自己的離線快取處理，這裡不攔截 Firestore 的連線。
-const VERSION = 'tripsplit-v1.2.9';
+const VERSION = 'tripsplit-v1.3.0';
 const SHELL = [
   './',
   './index.html',
@@ -47,6 +47,7 @@ self.addEventListener('fetch', (event) => {
   const isShell = url.origin === self.location.origin;
   const isSdk = url.href.startsWith('https://www.gstatic.com/firebasejs/');
   if (!isShell && !isSdk) return; // Firestore、登入、AI 等請求直接走網路
+  if (url.searchParams.has('vcheck')) return; // 檢查更新：直接問伺服器，不經過快取
 
   event.respondWith((async () => {
     const cache = await caches.open(VERSION);

@@ -215,3 +215,10 @@ details.help[open] summary::after { transform: rotate(90deg); }
 a.btn { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; color: var(--text); }
 a.btn.block { display: flex; }
 .empty a { color: var(--accent); font-weight: 600; }
+
+/* 有新版本提示 */
+#update-bar { position: fixed; left: 12px; right: 12px; top: calc(var(--safe-t) + 8px); z-index: 60; max-width: 616px; margin: 0 auto;
+  display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--card); color: var(--text); box-shadow: 0 4px 18px rgba(0, 0, 0, .18); border: 1px solid var(--accent); font-weight: 600; }
+#update-bar .grow { flex: 1; }
+#update-bar .btn { padding: 8px 12px; }
