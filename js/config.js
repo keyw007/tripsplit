@@ -15,6 +15,6 @@ export const AI_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-fl
 
 // App Check：Firebase AI Logic 自 2026/11/2 起強制要求。
 // type 'v3'（reCAPTCHA v3 網站金鑰）或 'enterprise'（reCAPTCHA Enterprise 金鑰）；key 空白代表還沒設定。
-export const APP_CHECK = { type: 'v3', key: '' };
+export const APP_CHECK = { type: 'enterprise', key: '' };
 
 export const APP_VERSION = '1.2.0';

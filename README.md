@@ -32,7 +32,7 @@
 2. Authentication → 設定 → 授權網域 → 加入 `keyw007.github.io`
 3. Firestore Database → 建立資料庫（正式環境模式）→ 規則：貼上 `firestore.rules` 內容並發布
 4. AI Logic → 開始使用 → Gemini Developer API
-5. App Check（AI Logic 自 2026/11/2 起強制）：建立 reCAPTCHA v3 金鑰（網域 keyw007.github.io），在 App Check → 應用程式註冊網頁 App 並貼上密鑰，再把網站金鑰填進 `js/config.js` 的 `APP_CHECK.key`
+5. App Check（AI Logic 自 2026/11/2 起強制）：在 Google Cloud Fraud Defense（舊稱 reCAPTCHA Enterprise）建立網站金鑰（網域 keyw007.github.io、不用核取方塊），在 App Check → 應用程式用 Fraud Defense 註冊網頁 App，再把金鑰填進 `js/config.js` 的 `APP_CHECK.key`
 
 ## 測試
 
