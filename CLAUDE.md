@@ -68,5 +68,6 @@ python3 tests/voice_check.py /tmp/voice    # 語音：先離線再 AI、套用�
 
 - 已在 iPhone 主畫面 App 實測成功：建立旅行、記帳、同步、收據辨識（AI＋App Check）、語音 AI 解析、連結 Google 帳號（1.2.7，redirect）、刪掉主畫面 App 重新加入後用同一個 Google 帳號拿回旅行（1.2.8，`credential-already-in-use` → 確認 → 切換帳號）。
 - 1.2.9 加了 App 內使用說明（`#/help`）。iPhone 用 Safari 分頁打開時，首頁和邀請加入頁會提醒「先加入主畫面、在主畫面 App 用『用邀請連結加入』貼上」（Safari 分頁和主畫面 App 帳號不同）。
+- AI 實測（iPhone，1.3.3–1.3.5）：語音模型回應 2.4–5.4 秒、收據 3.9–4.2 秒，準備都是 0.0 秒（預先準備有效），模型 gemini-3.6-flash 沒有重試。
 - 尚未實測：邀請連結加入（吳薰的手機）、Android（安裝、語音、拍明細、Google 綁定）。
 - 可能的下一步：日幣現金追蹤；匯率自動抓取。
