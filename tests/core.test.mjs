@@ -1,7 +1,7 @@
 // 執行：node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { owedShares, computeBalances, settle, splitReceipt, roundShares, toBase, formatMoney } from '../js/money.js';
+import { owedShares, computeBalances, settle, splitReceipt, roundShares, toBase, formatMoney, cashBalances, exchangeAverages, roundRate } from '../js/money.js';
 import { parseExpenseText, cnToNumber } from '../js/parse.js';
 
 const trip = {
@@ -124,4 +124,55 @@ test('語音：三人只有其中兩人', () => {
   assert.equal(r.payerId, 'c');
   assert.deepEqual(new Set(r.participantIds), new Set(['b', 'c']));
   assert.equal(r.category, 'ticket');
+});
+
+test('語音：付款方式', () => {
+  const a = parseExpenseText('拉麵 1200 現金 吳薰付', opt);
+  assert.equal(a.payMethod, 'cash');
+  assert.equal(a.payerId, 'b');
+  assert.equal(a.amount, 1200);
+  assert.equal(a.title, '拉麵');
+  const b = parseExpenseText('藥妝 5400 吳薰用信用卡付', opt);
+  assert.equal(b.payMethod, 'card');
+  assert.equal(b.payerId, 'b');
+  const c = parseExpenseText('電車 500 西瓜卡', opt);
+  assert.equal(c.payMethod, 'card');
+  const d = parseExpenseText('牙刷 300', opt);
+  assert.equal(d.payMethod, null);
+  assert.ok(d.title.includes('牙刷'));
+  const e = parseExpenseText('便當 800 我付現', opt);
+  assert.equal(e.payMethod, 'cash');
+  assert.equal(e.payerId, 'a');
+});
+
+test('現金餘額：換匯、現金付款、刷卡不扣、現金轉帳、清點', () => {
+  const cash = [
+    { type: 'cash', kind: 'in', memberId: 'a', currency: 'JPY', amount: 30000, cost: 6300 },
+    { type: 'cash', kind: 'in', memberId: 'b', currency: 'JPY', amount: 10000 },
+    { type: 'cash', kind: 'adj', memberId: 'a', currency: 'JPY', amount: -100, counted: 25000 },
+  ];
+  const exps = [
+    { type: 'expense', payerId: 'a', currency: 'JPY', amount: 2400, payMethod: 'cash' },
+    { type: 'expense', payerId: 'a', currency: 'JPY', amount: 9999, payMethod: 'card' },
+    { type: 'expense', payerId: 'a', currency: 'JPY', amount: 500 }, // 舊資料沒有 payMethod：不扣
+    { type: 'transfer', payerId: 'a', toId: 'b', currency: 'JPY', amount: 2500, payMethod: 'cash' },
+    { type: 'expense', payerId: 'b', currency: 'TWD', amount: 300, payMethod: 'cash' },
+  ];
+  const r = cashBalances(exps, cash);
+  assert.equal(r.a.JPY, 30000 - 100 - 2400 - 2500);
+  assert.equal(r.b.JPY, 10000 + 2500);
+  assert.equal(r.b.TWD, -300);
+});
+
+test('換匯平均匯率與四捨五入', () => {
+  const avg = exchangeAverages([
+    { kind: 'in', currency: 'JPY', amount: 30000, cost: 6300 },
+    { kind: 'in', currency: 'JPY', amount: 10000, cost: 2080 },
+    { kind: 'in', currency: 'JPY', amount: 5000 }, // 沒填花費：不算
+    { kind: 'adj', currency: 'JPY', amount: 100, cost: 999 },
+  ], 'TWD');
+  assert.equal(roundRate(avg.JPY.rate), 0.2095);
+  assert.equal(avg.JPY.amount, 40000);
+  assert.equal(roundRate(32.4567), 32.46);
+  assert.equal(roundRate(0.0231549), 0.02315);
 });

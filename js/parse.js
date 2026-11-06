@@ -93,7 +93,14 @@ export function parseExpenseText(text, { members = [], meId = null, defaultCurre
     participantIds: null, // null 代表全部成員
     category: 'other',
     date: null,
+    payMethod: null, // 'cash'、'card'，沒講就是 null
   };
+
+  // 付款方式：「現金」「付現」→ 現金；「刷卡」「信用卡」「Suica」等 → 卡片
+  if (/(現金|付現|現鈔)/.test(rest)) result.payMethod = 'cash';
+  else if (/(刷卡|信用卡|卡片|西瓜卡|suica|icoca|pasmo|apple ?pay|line ?pay|街口|電子支付)/i.test(rest)) result.payMethod = 'card';
+  // 直接拿掉（不留空白），「吳薰用信用卡付」才會變成「吳薰付」
+  rest = rest.replace(/(用現金|付現金|現金|現鈔|用信用卡|信用卡|用卡片|卡片)/g, '').replace(/付現/g, '付');
 
   // 日期
   const dayOffset = /前天/.test(rest) ? -2 : /昨天|昨晚/.test(rest) ? -1 : 0;

@@ -27,6 +27,10 @@ try:
         page.on('pageerror', lambda e: errors.append(f'pageerror: {e}'))
         page.route('**/js/firebase.js', lambda r: r.fulfill(path=str(REPO / 'tests/mock/firebase.js'), content_type='application/javascript'))
         page.route('**/js/ai.js', lambda r: r.fulfill(path=str(REPO / 'tests/mock/ai.js'), content_type='application/javascript'))
+        # 新增旅行會自動抓匯率：回傳固定的假匯率（測試環境連不到外網）
+        for host in ['https://cdn.jsdelivr.net/**', 'https://latest.currency-api.pages.dev/**', 'https://open.er-api.com/**']:
+            page.route(host, lambda r: r.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'},
+                                                 body='{"date":"2026-12-20","twd":{"jpy":4.7531},"result":"success","rates":{"JPY":4.7531}}'))
 
         def shot(name):
             page.wait_for_timeout(250)

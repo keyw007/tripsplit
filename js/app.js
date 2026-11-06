@@ -7,11 +7,13 @@ import {
 import {
   formatMoney, toBase, owedShares, amountSplitGap, computeBalances, settle,
   splitReceipt, roundShares, decimalsOf, missingRates,
+  cashBalances, exchangeAverages, roundRate,
 } from './money.js';
 import { parseExpenseText, CATEGORIES, guessCategory } from './parse.js';
 import { getMe, setMe, getPref, setPref, queueReceipt, listReceipts, removeReceipt } from './store.js';
 import { APP_VERSION } from './config.js';
 import { helpHtml, platform, isStandalone } from './help.js';
+import { fetchRates } from './rates.js';
 
 const CURRENCIES = ['TWD', 'JPY', 'USD', 'KRW', 'EUR', 'HKD', 'CNY', 'THB'];
 const TABS = [
@@ -28,6 +30,7 @@ const S = {
   trip: null,
   tripLoaded: false,
   expenses: [],
+  cash: [], // 現金紀錄（換匯、清點），和開支存在同一個集合，type: 'cash'
   expensesFromCache: true,
   receipts: [],
   meId: null,
@@ -136,6 +139,7 @@ function enterTrip(tripId) {
   S.trip = null;
   S.tripLoaded = false;
   S.expenses = [];
+  S.cash = [];
   S.receipts = [];
   S.meId = getMe(tripId);
   S.unsubTrip = watchTrip(tripId, (trip) => {
@@ -152,7 +156,8 @@ function enterTrip(tripId) {
     }
     if (trip && !S.unsubExp) {
       S.unsubExp = watchExpenses(tripId, (list, fromCache) => {
-        S.expenses = list;
+        S.expenses = list.filter((e) => e.type !== 'cash');
+        S.cash = list.filter((e) => e.type === 'cash');
         S.expensesFromCache = fromCache;
         render();
       });
@@ -164,7 +169,7 @@ function enterTrip(tripId) {
 function leaveTrip() {
   S.unsubTrip?.(); S.unsubExp?.();
   S.unsubTrip = S.unsubExp = null;
-  S.tripId = null; S.trip = null; S.expenses = [];
+  S.tripId = null; S.trip = null; S.expenses = []; S.cash = [];
 }
 async function refreshReceipts() {
   if (!S.tripId) return;
@@ -288,6 +293,7 @@ function tabList() {
       <div><div class="muted small">我的餘額</div><div class="big ${myBal > 0.5 ? 'pos' : myBal < -0.5 ? 'neg' : ''}">${myBal === null ? '—' : money(myBal)}</div>
       <div class="muted small">${myBal === null ? '' : myBal > 0.5 ? '別人欠你' : myBal < -0.5 ? '你欠別人' : '剛好打平'}</div></div>
     </div>`;
+  html += myCashCard();
   if (!exps.length) {
     html += `<div class="empty">還沒有開支。<br>按下面的按鈕新增，或用語音、拍明細。</div>`;
     return html;
@@ -311,7 +317,7 @@ function expRow(e) {
   const t = S.trip;
   if (e.type === 'transfer') {
     return `<div class="exp" data-act="edit" data-id="${e.id}"><div class="ico">💸</div>
-      <div class="mid"><div class="t">${esc(memberName(e.payerId))} → ${esc(memberName(e.toId))}</div><div class="s">轉帳還款${e._pending ? '<span class="pending-dot"></span>' : ''}</div></div>
+      <div class="mid"><div class="t">${esc(memberName(e.payerId))} → ${esc(memberName(e.toId))}</div><div class="s">轉帳還款${e.payMethod === 'cash' ? '・💴 現金' : ''}${e._pending ? '<span class="pending-dot"></span>' : ''}</div></div>
       <div class="amt"><div class="a">${formatMoney(e.amount, e.currency)}</div></div></div>`;
   }
   const owed = owedShares(e);
@@ -321,7 +327,7 @@ function expRow(e) {
   const conv = e.currency !== base() ? `<div class="s">≈ ${money(toBase(e.amount, e.currency, t))}</div>` : '';
   return `<div class="exp" data-act="edit" data-id="${e.id}"><div class="ico">${cat(e.category).icon}</div>
     <div class="mid"><div class="t">${esc(e.title || cat(e.category).label)}</div>
-      <div class="s">${esc(memberName(e.payerId))} 付・${esc(who)}${mine ? `・${mine}` : ''}${e._pending ? '<span class="pending-dot"></span>' : ''}</div></div>
+      <div class="s">${esc(memberName(e.payerId))} 付${e.payMethod === 'cash' ? '💴' : ''}・${esc(who)}${mine ? `・${mine}` : ''}${e._pending ? '<span class="pending-dot"></span>' : ''}</div></div>
     <div class="amt"><div class="a">${formatMoney(e.amount, e.currency)}</div>${conv}</div></div>`;
 }
 
@@ -340,6 +346,7 @@ function tabSettle() {
     <div class="settle-row"><div class="grow"><b>${esc(memberName(s.from))}</b> 給 <b>${esc(memberName(s.to))}</b><div style="font-size:20px;font-weight:800">${money(s.amount)}</div></div>
     <button class="btn" data-act="record-settle" data-i="${i}">已付款</button></div>`).join('') : '<div class="muted">大家都打平了 🎉</div>'}</div>
     <p class="muted small">正數代表別人欠他，負數代表他欠別人。按「已付款」會記一筆轉帳，餘額就會歸零。</p>`;
+  html += allCashCard();
   return html;
 }
 
@@ -368,7 +375,8 @@ function tabStats() {
 
 function tabSettings() {
   const t = S.trip;
-  const used = new Set([t.defaultCurrency, ...S.expenses.map((e) => e.currency), ...Object.keys(t.rates || {})]);
+  const used = new Set([t.defaultCurrency, ...S.expenses.map((e) => e.currency), ...S.cash.map((r) => r.currency), ...Object.keys(t.rates || {})]);
+  const avg = exchangeAverages(S.cash, t.baseCurrency);
   used.delete(t.baseCurrency);
   used.delete(undefined);
   const isOwner = t.createdBy === S.user.uid;
@@ -388,7 +396,10 @@ function tabSettings() {
       <label class="field"><span>結算幣別（餘額、統計都用這個幣別）</span><select id="set-base">${CURRENCIES.map((c) => `<option ${c === t.baseCurrency ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <label class="field"><span>記帳預設幣別</span><select id="set-default">${CURRENCIES.map((c) => `<option ${c === t.defaultCurrency ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <h2 style="margin-top:6px">匯率（1 單位外幣 = 多少 ${t.baseCurrency}）</h2>
-      ${[...used].map((c) => `<label class="field"><span>1 ${c} =</span><input type="number" inputmode="decimal" step="any" data-rate="${c}" value="${t.rates?.[c] ?? ''}" placeholder="例如 0.21"></label>`).join('') || '<p class="muted small">目前只用結算幣別，不需要匯率。</p>'}
+      ${t.ratesInfo ? `<p class="muted small" style="margin-top:-4px">上次自動抓取：${esc(t.ratesInfo.date || '')}（${esc(t.ratesInfo.source || '')}）</p>` : ''}
+      ${[...used].map((c) => `<label class="field"><span>1 ${c} =</span><input type="number" inputmode="decimal" step="any" data-rate="${c}" value="${t.rates?.[c] ?? ''}" placeholder="例如 0.21"></label>
+        ${avg[c] ? `<p class="muted small" style="margin:-6px 0 10px">你們換匯平均 ${roundRate(avg[c].rate)} <button class="link-btn" data-act="use-avg-rate" data-c="${c}" data-v="${roundRate(avg[c].rate)}">用這個</button></p>` : ''}`).join('') || '<p class="muted small">目前只用結算幣別，不需要匯率。</p>'}
+      ${used.size ? `<button class="btn block" data-act="fetch-rates" ${S.online ? '' : 'disabled'}>🌐 抓最新匯率${S.online ? '' : '（需要網路）'}</button><div id="rate-preview"></div><div style="height:8px"></div>` : ''}
       <button class="btn primary block" data-act="save-trip">儲存</button></div>
     <div class="card"><h2>AI 辨識</h2>
       <label class="row"><input type="checkbox" id="set-ai" ${aiEnabled() ? 'checked' : ''}><span class="grow">有網路時，拍明細與語音用 AI 解析</span></label>
@@ -485,9 +496,65 @@ async function handleGoogleRedirect() {
   render();
 }
 
+// ---------- 自動抓匯率 ----------
+let fetchedRates = null;
+async function doFetchRates() {
+  const t = S.trip;
+  const curs = [...document.querySelectorAll('[data-rate]')].map((el) => el.dataset.rate);
+  const box = document.getElementById('rate-preview');
+  box.innerHTML = '<p class="muted small"><span class="spinner"></span> 抓取中…</p>';
+  try {
+    fetchedRates = await fetchRates(t.baseCurrency, curs);
+  } catch (err) {
+    fetchedRates = null;
+    box.innerHTML = `<p class="small neg">${esc(err.message)}</p>`;
+    return;
+  }
+  const rows = Object.entries(fetchedRates.rates).map(([c, r]) => {
+    const cur = Number(t.rates?.[c]);
+    const diff = cur ? ` <span class="muted">（目前 ${cur}，${r > cur ? '+' : ''}${((r / cur - 1) * 100).toFixed(1)}%）</span>` : ' <span class="muted">（目前沒設）</span>';
+    return `<div>1 ${c} = <b>${r}</b> ${t.baseCurrency}${diff}</div>`;
+  }).join('');
+  box.innerHTML = `<div class="card" style="box-shadow:none;background:var(--bg);margin-top:8px">
+    <div class="muted small">${esc(fetchedRates.date)}・${esc(fetchedRates.source)}</div>${rows}
+    <p class="muted small">套用後，<b>所有開支</b>（包括之前記的）都會用新匯率重新換算。實際換匯或刷卡的匯率可能不同，可以再手動調整。</p>
+    <button class="btn primary block" data-act="apply-rates">套用</button></div>`;
+}
+
+function applyFetchedRates() {
+  const t = S.trip;
+  if (!fetchedRates) return;
+  updateTrip(t.id, {
+    rates: { ...(t.rates || {}), ...fetchedRates.rates },
+    ratesInfo: { date: fetchedRates.date, source: fetchedRates.source, fetchedMs: Date.now() },
+  });
+  fetchedRates = null;
+  toast('已套用新匯率');
+}
+
+// 新增旅行時自動填今天的匯率（使用者自己改過就不覆蓋）
+async function prefillNewTripRate() {
+  const el = document.getElementById('nt-rate');
+  const info = document.getElementById('nt-rate-info');
+  if (!el || el.dataset.edited) return;
+  const baseC = document.getElementById('nt-base').value;
+  const local = document.getElementById('nt-local').value;
+  if (baseC === local) { info.textContent = '當地幣別和結算幣別相同，不需要匯率'; return; }
+  if (!S.online) { info.textContent = '沒有網路，請手動填匯率（之後可以在設定裡抓）'; return; }
+  info.textContent = '抓今天的匯率中…';
+  try {
+    const r = await fetchRates(baseC, [local]);
+    if (el.dataset.edited || document.getElementById('nt-local')?.value !== local) return;
+    el.value = r.rates[local];
+    info.textContent = `今天的匯率（${r.date}・${r.source}）`;
+  } catch {
+    info.textContent = '抓不到匯率，請手動填（之後可以在設定裡再抓）';
+  }
+}
+
 // ---------- 新增旅行 ----------
 function sheetNewTrip() {
-  openSheet((b) => {
+  const body = openSheet((b) => {
     b.innerHTML = `<h3>新增旅行</h3>
       <label class="field"><span>旅行名稱</span><input type="text" id="nt-name" placeholder="例如 2026 日本跨年"></label>
       <label class="field"><span>我的名字</span><input type="text" id="nt-me" placeholder="例如 郁文"></label>
@@ -497,8 +564,12 @@ function sheetNewTrip() {
         <label class="field grow"><span>當地幣別</span><select id="nt-local">${CURRENCIES.map((c) => `<option ${c === 'JPY' ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       </div>
       <label class="field"><span>匯率：1 當地幣 = 多少結算幣</span><input type="number" inputmode="decimal" step="any" id="nt-rate" value="0.21"></label>
+      <div class="muted small" id="nt-rate-info" style="margin:-6px 0 10px"></div>
       <div class="foot"><button class="btn" data-act="close">取消</button><button class="btn primary" data-act="nt-create">建立</button></div>`;
   });
+  body.addEventListener('input', (ev) => { if (ev.target.id === 'nt-rate') ev.target.dataset.edited = '1'; });
+  body.addEventListener('change', (ev) => { if (ev.target.id === 'nt-base' || ev.target.id === 'nt-local') prefillNewTripRate(); });
+  prefillNewTripRate();
 }
 
 function doCreateTrip() {
@@ -523,6 +594,141 @@ function doCreateTrip() {
   go(`#/t/${id}/list`);
 }
 
+// ---------- 付款方式 ----------
+const lastPayMethod = () => getPref(`pay_${S.tripId}`, 'card');
+const PAY_LABEL = { cash: '💴 現金', card: '💳 刷卡・其他' };
+
+// ---------- 現金 ----------
+const cashBal = () => cashBalances(S.expenses, S.cash);
+// 這個人有用到的現金幣別（有紀錄或有付過現金），預設幣別排第一
+function cashCurrencies(memberId) {
+  const t = S.trip;
+  const set = new Set();
+  for (const r of S.cash) if (!memberId || r.memberId === memberId) set.add(r.currency);
+  for (const e of S.expenses) if (e.payMethod === 'cash' && (!memberId || e.payerId === memberId || e.toId === memberId)) set.add(e.currency);
+  const def = t.defaultCurrency || base();
+  return [...set].sort((a, b) => (a === def ? -1 : b === def ? 1 : a.localeCompare(b)));
+}
+
+function myCashCard() {
+  if (!S.meId) return '';
+  const curs = cashCurrencies(S.meId);
+  if (!curs.length) {
+    return `<div class="card cash-card"><div class="row"><div class="grow"><b>💴 現金</b><div class="muted small">記下換匯或領了多少，付現金時自動扣，隨時知道身上還剩多少。</div></div>
+      <button class="btn" data-act="cash-in">＋ 換匯</button></div></div>`;
+  }
+  const mine = cashBal()[S.meId] || {};
+  return `<div class="card cash-card">
+    <div class="row"><b class="grow">💴 我的現金</b><a class="muted small" href="#/t/${S.tripId}/settle">全部人 ›</a></div>
+    <div class="cash-amounts">${curs.map((c) => `<div class="big ${(mine[c] || 0) < 0 ? 'neg' : ''}">${formatMoney(mine[c] || 0, c)}</div>`).join('')}</div>
+    ${curs.some((c) => (mine[c] || 0) < 0) ? '<div class="muted small neg">比 0 還少：可能有換匯沒記，按「清點」照實際數到的修正。</div>' : ''}
+    <div class="row" style="margin-top:8px"><button class="btn grow" data-act="cash-in">＋ 換匯／領錢</button><button class="btn grow" data-act="cash-count">清點</button></div></div>`;
+}
+
+function allCashCard() {
+  const t = S.trip;
+  const curs = cashCurrencies(null);
+  if (!curs.length) return '';
+  const bal = cashBal();
+  const avg = exchangeAverages(S.cash, base());
+  const kindLabel = (r) => (r.kind === 'adj' ? `清點（數到 ${formatMoney(r.counted, r.currency)}）` : r.note || '換匯／領錢');
+  const hist = [...S.cash].sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdMs || 0) - (a.createdMs || 0));
+  return `<div class="card"><h2>💴 現金</h2>
+    ${t.members.map((m) => `<div class="settle-row"><div class="grow"><b>${esc(m.name)}</b>${m.id === S.meId ? '（我）' : ''}</div>
+      <div style="text-align:right;font-weight:800">${curs.map((c) => `<div class="${(bal[m.id]?.[c] || 0) < 0 ? 'neg' : ''}">${formatMoney(bal[m.id]?.[c] || 0, c)}</div>`).join('')}</div></div>`).join('')}
+    ${Object.entries(avg).map(([c, a]) => `<p class="muted small">換匯平均：1 ${c} = ${roundRate(a.rate)} ${base()}（${formatMoney(a.amount, c)} 花了 ${money(a.cost)}）</p>`).join('')}
+    <div class="row" style="margin:8px 0"><button class="btn grow" data-act="cash-in">＋ 換匯／領錢</button><button class="btn grow" data-act="cash-count">清點</button></div>
+    <details class="cash-hist"><summary class="muted small">換匯與清點紀錄（${hist.length}）</summary>
+      ${hist.map((r) => `<div class="settle-row"><div class="grow"><div>${esc(memberName(r.memberId))}・${esc(kindLabel(r))}</div>
+        <div class="muted small">${esc(r.date || '')}${Number(r.cost) > 0 ? `・花了 ${money(r.cost)}・1 ${r.currency} = ${roundRate(r.cost / r.amount)}` : ''}${r._pending ? '<span class="pending-dot"></span>' : ''}</div></div>
+        <div style="font-weight:700">${Number(r.amount) > 0 ? '+' : ''}${formatMoney(r.amount, r.currency)}</div>
+        <button class="icon-btn small-x" data-act="cash-del" data-id="${r.id}" aria-label="刪除">✕</button></div>`).join('') || '<div class="muted small">沒有紀錄</div>'}
+    </details></div>`;
+}
+
+function memberSelect(id, sel) {
+  return `<select id="${id}">${S.trip.members.map((m) => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)}${m.id === S.meId ? '（我）' : ''}</option>`).join('')}</select>`;
+}
+function currencySelect(id, sel) {
+  return `<select id="${id}">${CURRENCIES.map((c) => `<option ${c === sel ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
+}
+
+function sheetCashIn() {
+  const t = S.trip;
+  openSheet((b) => {
+    b.innerHTML = `<h3>💴 換匯／領錢</h3>
+      <p class="muted small" style="margin-top:-6px">記下拿到多少現金。之後付現金的開支會自動從這裡扣。</p>
+      <div class="row"><label class="field grow"><span>誰拿到現金</span>${memberSelect('ci-who', S.meId)}</label>
+        <label class="field" style="width:110px"><span>幣別</span>${currencySelect('ci-cur', t.defaultCurrency || base())}</label></div>
+      <label class="field"><span>拿到多少</span><input type="number" inputmode="decimal" step="any" id="ci-amount" placeholder="例如 30000"></label>
+      <label class="field"><span>花了多少 ${base()}（可不填，填了會算出實際匯率）</span><input type="number" inputmode="decimal" step="any" id="ci-cost" placeholder="例如 6300"></label>
+      <div class="muted small" id="ci-rate" style="margin:-6px 0 10px"></div>
+      <div class="row"><label class="field grow"><span>說明</span><input type="text" id="ci-note" placeholder="例如 機場換匯、7-11 ATM"></label>
+        <label class="field grow"><span>日期</span><input type="date" id="ci-date" value="${todayStr()}"></label></div>
+      <div class="foot"><button class="btn" data-act="close">取消</button><button class="btn primary" data-act="cash-save-in">儲存</button></div>`;
+  }).addEventListener('input', () => {
+    const a = parseFloat(document.getElementById('ci-amount').value);
+    const c = parseFloat(document.getElementById('ci-cost').value);
+    const cur = document.getElementById('ci-cur').value;
+    document.getElementById('ci-rate').textContent = a > 0 && c > 0 && cur !== base() ? `實際匯率：1 ${cur} = ${roundRate(c / a)} ${base()}` : '';
+  });
+}
+
+function sheetCashCount() {
+  const t = S.trip;
+  const who0 = S.meId || t.members[0]?.id;
+  const cur0 = cashCurrencies(who0)[0] || t.defaultCurrency || base();
+  const body = openSheet((b) => {
+    b.innerHTML = `<h3>💴 清點現金</h3>
+      <p class="muted small" style="margin-top:-6px">數一下身上的現金，填實際的金額。和帳面不一樣時會記一筆差額（例如忘了記的小額花費）。</p>
+      <div class="row"><label class="field grow"><span>誰的現金</span>${memberSelect('cc-who', who0)}</label>
+        <label class="field" style="width:110px"><span>幣別</span>${currencySelect('cc-cur', cur0)}</label></div>
+      <div class="muted small" id="cc-book"></div>
+      <label class="field"><span>實際數到</span><input type="number" inputmode="decimal" step="any" id="cc-counted" placeholder="例如 12340"></label>
+      <div class="muted small" id="cc-diff" style="margin:-6px 0 10px"></div>
+      <div class="foot"><button class="btn" data-act="close">取消</button><button class="btn primary" data-act="cash-save-count">儲存</button></div>`;
+  });
+  const refresh = () => {
+    const who = document.getElementById('cc-who').value;
+    const cur = document.getElementById('cc-cur').value;
+    const book = cashBal()[who]?.[cur] || 0;
+    document.getElementById('cc-book').textContent = `帳面上有 ${formatMoney(book, cur)}`;
+    const counted = parseFloat(document.getElementById('cc-counted').value);
+    document.getElementById('cc-diff').textContent = Number.isFinite(counted) ? `差 ${formatMoney(counted - book, cur)}` : '';
+  };
+  body.addEventListener('input', refresh);
+  body.addEventListener('change', refresh);
+  refresh();
+}
+
+function saveCashIn() {
+  const v = (id) => document.getElementById(id).value;
+  const amount = parseFloat(v('ci-amount'));
+  if (!(amount > 0)) { toast('請輸入拿到多少'); return; }
+  const cost = parseFloat(v('ci-cost'));
+  const cur = v('ci-cur');
+  saveExpense(S.tripId, S.user.uid, {
+    type: 'cash', kind: 'in', memberId: v('ci-who'), currency: cur, amount,
+    cost: cost > 0 && cur !== base() ? cost : null, note: v('ci-note').trim(), date: v('ci-date') || todayStr(),
+  });
+  closeSheet();
+  toast(`已記錄 ${formatMoney(amount, cur)}`);
+}
+
+function saveCashCount() {
+  const v = (id) => document.getElementById(id).value;
+  const who = v('cc-who');
+  const cur = v('cc-cur');
+  const counted = parseFloat(v('cc-counted'));
+  if (!Number.isFinite(counted) || counted < 0) { toast('請輸入實際數到的金額'); return; }
+  const book = cashBal()[who]?.[cur] || 0;
+  const diff = counted - book;
+  closeSheet();
+  if (Math.abs(diff) < 10 ** -decimalsOf(cur) / 2) { toast('和帳面一樣，不用修正 👍'); return; }
+  saveExpense(S.tripId, S.user.uid, { type: 'cash', kind: 'adj', memberId: who, currency: cur, amount: diff, counted, date: todayStr(), note: '清點' });
+  toast(`已修正 ${formatMoney(diff, cur)}`);
+}
+
 // ---------- 開支編輯 ----------
 function blankDraft() {
   const t = S.trip;
@@ -537,6 +743,7 @@ function blankDraft() {
     category: 'food',
     splitMode: 'equal',
     shares: Object.fromEntries(t.members.map((m) => [m.id, 1])),
+    payMethod: lastPayMethod(),
     note: '',
     items: null,
     useItems: false,
@@ -613,6 +820,8 @@ function sheetEditor(draftIn, { queueId = null, source: sourceIn = '', detail: d
         ${ed.type === 'transfer' ? `<label class="field grow"><span>付給誰</span><select data-k="toId">${['<option value="">選擇</option>', memberOpts(ed.toId)].join('')}</select></label>` : ''}
         <label class="field grow"><span>日期</span><input type="date" data-k="date" value="${ed.date || ''}"></label>
       </div>
+      <div class="field"><span class="muted small">付款方式${ed.type === 'transfer' ? '' : '（付現金會從付款人的現金扣掉）'}</span><div class="seg">
+        ${['cash', 'card'].map((k) => `<button data-act="pay" data-v="${k}" class="${(ed.payMethod || 'card') === k ? 'on' : ''}">${PAY_LABEL[k]}</button>`).join('')}</div></div>
       ${ed.type === 'transfer' ? '' : `<div class="field"><span class="muted small">類別</span><div class="chips">${CATEGORIES.map((c) => `<button class="chip ${ed.category === c.id ? 'on' : ''}" data-act="cat" data-v="${c.id}">${c.icon} ${c.label}</button>`).join('')}</div></div>`}
       ${splitSection()}
       ${ed.type === 'transfer' ? '' : `<label class="field"><span>備註</span><input type="text" data-k="note" value="${esc(ed.note || '')}"></label>`}
@@ -668,11 +877,12 @@ function sheetEditor(draftIn, { queueId = null, source: sourceIn = '', detail: d
     const b = ev.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
-    if (['type', 'cat', 'mode', 'item-member'].includes(act)) touched = true;
+    if (['type', 'cat', 'mode', 'item-member', 'pay'].includes(act)) touched = true;
     if (act === 'close') closeSheet();
     else if (act === 'ai-apply') { Object.assign(ed, pendingAi); pendingAi = null; touched = false; draw(body); }
     else if (act === 'type') { ed.type = b.dataset.v; if (ed.type === 'transfer') { ed.title = '轉帳'; ed.currency = base(); } draw(body); }
     else if (act === 'cat') { ed.category = b.dataset.v; draw(body); }
+    else if (act === 'pay') { ed.payMethod = b.dataset.v; draw(body); }
     else if (act === 'mode') {
       const v = b.dataset.v;
       if (v === 'equal') ed.shares = Object.fromEntries(t.members.map((m) => [m.id, Number(ed.shares[m.id]) > 0 ? 1 : 0]));
@@ -704,7 +914,9 @@ function sheetEditor(draftIn, { queueId = null, source: sourceIn = '', detail: d
         payerId: ed.payerId,
         date: ed.date || todayStr(),
         note: ed.note || '',
+        payMethod: ed.payMethod || 'card',
       };
+      setPref(`pay_${S.tripId}`, out.payMethod);
       if (ed.type === 'transfer') {
         if (!ed.toId || ed.toId === ed.payerId) { toast('請選付給誰'); return; }
         Object.assign(out, { toId: ed.toId, splitMode: null, shares: {}, category: 'transfer', items: null });
@@ -868,6 +1080,7 @@ function voiceDraftFrom(p, text) {
     splitMode: 'equal',
     shares: Object.fromEntries(t.members.map((m) => [m.id, ids.includes(m.id) ? 1 : 0])),
     note: `🎤 ${text}`,
+    ...(p.payMethod ? { payMethod: p.payMethod } : {}), // 沒講就用上次的付款方式
   };
 }
 
@@ -902,6 +1115,7 @@ async function aiVoiceDraft(text) {
     participantIds: partIds.length ? [...new Set(partIds)] : null,
     category: CATEGORIES.some((c) => c.id === r.category) ? r.category : local.category,
     date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : local.date,
+    payMethod: local.payMethod,
   };
   return { draft: voiceDraftFrom(p, text), source: `AI 解析・${secondsSince(t0)}`, detail: aiTimingText(aiMod) };
 }
@@ -987,7 +1201,7 @@ function sheetReceipts() {
 // ---------- 事件 ----------
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-act]');
-  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply'].includes(b.dataset.act)) return;
+  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply', 'pay'].includes(b.dataset.act)) return;
   const act = b.dataset.act;
   const t = S.trip;
   switch (act) {
@@ -995,6 +1209,20 @@ document.addEventListener('click', async (ev) => {
     case 'new-trip': sheetNewTrip(); break;
     case 'nt-create': doCreateTrip(); break;
     case 'check-update': checkForUpdateNow(); break;
+    case 'cash-in': sheetCashIn(); break;
+    case 'cash-count': sheetCashCount(); break;
+    case 'cash-save-in': saveCashIn(); break;
+    case 'cash-save-count': saveCashCount(); break;
+    case 'cash-del':
+      if (confirm('刪除這筆現金紀錄？')) { deleteExpense(S.tripId, b.dataset.id); toast('已刪除'); }
+      break;
+    case 'fetch-rates': doFetchRates(); break;
+    case 'apply-rates': applyFetchedRates(); break;
+    case 'use-avg-rate': {
+      const el = document.querySelector(`[data-rate="${b.dataset.c}"]`);
+      if (el) { el.value = b.dataset.v; toast('已填入，按「儲存」才會生效'); }
+      break;
+    }
     case 'back': {
       // 從 App 內其他頁面進來就回上一頁，直接打開說明頁時回首頁
       ev.preventDefault();
@@ -1125,7 +1353,7 @@ document.addEventListener('change', (ev) => {
 
 function exportCsv() {
   const t = S.trip;
-  const head = ['日期', '類別', '標題', '金額', '幣別', `約${base()}`, '支付者', '轉給', '分攤方式', ...t.members.map((m) => `${m.name}負擔(${base()})`), '備註'];
+  const head = ['日期', '類別', '標題', '金額', '幣別', `約${base()}`, '支付者', '轉給', '分攤方式', ...t.members.map((m) => `${m.name}負擔(${base()})`), '付款方式', '備註'];
   const rows = [...S.expenses].reverse().map((e) => {
     const owed = e.type === 'transfer' ? {} : owedShares(e);
     return [
@@ -1134,9 +1362,18 @@ function exportCsv() {
       memberName(e.payerId), e.toId ? memberName(e.toId) : '',
       { equal: '平均', amount: '指定金額', shares: '份數' }[e.splitMode] || '',
       ...t.members.map((m) => (owed[m.id] != null ? Math.round(toBase(owed[m.id], e.currency, t) * 100) / 100 : '')),
+      e.payMethod === 'cash' ? '現金' : '刷卡・其他',
       e.note || '',
     ];
   });
+  // 現金紀錄（換匯、清點）放在最後，不算進分帳
+  for (const r of [...S.cash].sort((a, b) => (a.date || '').localeCompare(b.date || ''))) {
+    rows.push([
+      r.date, r.kind === 'adj' ? '現金清點' : '換匯／領錢', r.note || '', r.amount, r.currency,
+      r.cost ? r.cost : '', memberName(r.memberId), '', '', ...t.members.map(() => ''), '現金',
+      r.kind === 'adj' ? `數到 ${r.counted}` : r.cost ? `實際匯率 ${roundRate(r.cost / r.amount)}` : '',
+    ]);
+  }
   const csv = [head, ...rows].map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');

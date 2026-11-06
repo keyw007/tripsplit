@@ -223,3 +223,9 @@ a.btn.block { display: flex; }
 #update-bar .grow { flex: 1; }
 #update-bar .btn { padding: 8px 12px; }
 .link-btn { background: none; border: 0; padding: 4px 6px; margin: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* 現金 */
+.cash-amounts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 4px; }
+.cash-amounts .big { font-size: 24px; font-weight: 800; }
+.cash-hist summary { cursor: pointer; padding: 6px 0; }
+.small-x { font-size: 16px; padding: 4px 8px; margin-left: 4px; color: var(--muted); background: none; border: 0; }

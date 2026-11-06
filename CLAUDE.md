@@ -24,6 +24,7 @@
 | `js/money.js` | 換匯、分攤（equal/amount/shares）、餘額、結算、收據拆分（純函式，有單元測試） |
 | `js/parse.js` | 語音／文字離線解析（純函式，有單元測試） |
 | `js/firebase.js` | 匿名登入、Google 綁定、Firestore 讀寫 |
+| `js/rates.js` | 自動抓匯率：currency-api（jsDelivr）→ currency-api（Cloudflare）→ ExchangeRate-API 依序嘗試，免金鑰、有 CORS |
 | `js/ai.js` | Firebase AI Logic（Gemini Developer API）＋ App Check；模型依序嘗試 `AI_MODELS` |
 | `js/store.js` | localStorage 設定、IndexedDB 待辨識照片佇列 |
 | `js/config.js` | Firebase 設定、`APP_CHECK` 金鑰、`AI_MODELS`、`APP_VERSION` |
@@ -50,6 +51,8 @@
 - AI 速度（1.3.1）：語音用最少思考（Gemini 3 `thinkingLevel: MINIMAL`／2.5 `thinkingBudget: 0`），收據用 `LOW`／`1024`；模型不接受思考設定時拿掉再試一次（`js/ai.js` 的 `thinkingFor`）。打開語音／拍明細畫面時 `warmUpAi()` 先載入 SDK 和 App Check token。記帳畫面標題會顯示花了幾秒（「AI 解析・2.1 秒」）。照片長邊 1600、JPEG 品質 0.72。
 - 語音流程（1.3.4）：按解析後**馬上**用離線解析打開記帳畫面（「離線解析・AI 解析中…」），AI 在背景跑，回來後 `sheetEditor` 回傳的 `apply()` 套用；使用者已改過欄位就不覆蓋，改顯示「套用」。實測模型回應 2.4–5.4 秒（準備 0 秒），所以不等 AI。
 - **iPhone 不用網頁收音**（1.3.5）：`webkitSpeechRecognition` 在 iPhone 主畫面 App 會讓整個 App 卡死、要滑掉才能用（1.3.3 實測，WebKit 已知問題，JS 看門狗救不了）。iPhone 一律用鍵盤上的麥克風（iOS 聽寫），打開語音畫面時在同一個點擊裡 `focus()` 輸入框讓鍵盤跳出。Android 保留收音鈕＋看門狗（3 秒沒開始就 `abort()`、`micBroken` 後改用鍵盤麥克風；一次最多 20 秒；按停止 1.5 秒沒結束就強制停）。
+- **現金追蹤**（1.4.0）：現金紀錄存在 `expenses` 集合（`type: 'cash'`，`kind: 'in'` 換匯／領錢、`'adj'` 清點差額），載入時拆到 `S.cash`，所以分帳、結算、統計都不受影響，也不用改 Firestore 規則。開支／轉帳有 `payMethod: 'cash'|'card'`（舊資料沒有＝刷卡，不扣現金），每趟旅行記住上次的選擇。計算在 `money.js` 的 `cashBalances`、`exchangeAverages`。
+- **匯率**是整趟旅行共用（`trip.rates`），改了會重算所有開支，所以自動抓取只在「建立旅行」和「設定 → 🌐 抓最新匯率（預覽後按套用）」，不會自己默默更新。`trip.ratesInfo` 記錄抓取日期與來源。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試
@@ -60,6 +63,7 @@ python3 tests/ui_check.py /tmp/ui          # 完整畫面流程（tests/mock 假
 python3 tests/link_check.py /tmp/link      # 連結 Google 帳號流程
 python3 tests/update_check.py /tmp/upd      # 自動檢查更新（真的 service worker）
 python3 tests/voice_check.py /tmp/voice    # 語音：先離線再 AI、套用、收音卡住
+python3 tests/cash_check.py /tmp/cash      # 現金追蹤、自動抓匯率（模擬匯率 API）
 ```
 
 畫面測試用 Playwright 攔截 `js/firebase.js`、`js/ai.js` 換成 `tests/mock/`；新增 firebase.js 匯出函式時，mock 也要加同名函式。
@@ -71,4 +75,4 @@ python3 tests/voice_check.py /tmp/voice    # 語音：先離線再 AI、套用�
 - AI 實測（iPhone，1.3.3–1.3.5）：語音模型回應 2.4–5.4 秒、收據 3.9–4.2 秒，準備都是 0.0 秒（預先準備有效），模型 gemini-3.6-flash 沒有重試。
 - 1.3.5 在 iPhone 實測成功：收據辨識準確（壓縮 0.72＋少思考沒影響準確度）；語音按下後鍵盤直接跳出，用鍵盤麥克風說完按解析，馬上顯示「離線解析・AI 解析中…」，幾秒後換成 AI 結果。
 - 尚未實測：邀請連結加入（吳薰的手機）、Android（安裝、語音、拍明細、Google 綁定）。
-- 可能的下一步：日幣現金追蹤；匯率自動抓取。
+- 1.4.0 加了現金追蹤與自動抓匯率，尚未在 iPhone 實測（開發環境連不到匯率 API，只用模擬回應測過格式）。

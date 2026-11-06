@@ -146,3 +146,50 @@ export function roundShares(per, total, decimals) {
   }
   return out;
 }
+
+// ---------- 現金 ----------
+// 現金紀錄（存在 expenses 集合，type: 'cash'，不算進分帳）：
+//   kind 'in'  換匯／領錢：memberId 多了 amount（currency）；cost 是花了多少結算幣別（可不填）
+//   kind 'adj' 清點：實際數到 counted，和帳面差 amount（可正可負）
+// 開支或轉帳 payMethod === 'cash' 時：付款人的現金減少；轉帳的收款人增加。
+// 回傳 { memberId: { 幣別: 金額 } }
+export function cashBalances(expenses, cashRecords) {
+  const res = {};
+  const add = (id, cur, v) => {
+    if (!id || !cur) return;
+    res[id] ??= {};
+    res[id][cur] = (res[id][cur] || 0) + v;
+  };
+  for (const r of cashRecords) {
+    if (r.deleted) continue;
+    add(r.memberId, r.currency, Number(r.amount) || 0);
+  }
+  for (const e of expenses) {
+    if (e.deleted || e.payMethod !== 'cash') continue;
+    const a = Number(e.amount) || 0;
+    add(e.payerId, e.currency, -a);
+    if (e.type === 'transfer') add(e.toId, e.currency, a);
+  }
+  return res;
+}
+
+// 換匯平均匯率：有填「花了多少結算幣別」的換匯紀錄，1 外幣 = 多少結算幣別
+// 回傳 { 幣別: { rate, amount, cost } }
+export function exchangeAverages(cashRecords, baseCurrency) {
+  const sum = {};
+  for (const r of cashRecords) {
+    if (r.deleted || r.kind !== 'in' || r.currency === baseCurrency) continue;
+    const cost = Number(r.cost) || 0;
+    const amount = Number(r.amount) || 0;
+    if (!(cost > 0 && amount > 0)) continue;
+    sum[r.currency] ??= { amount: 0, cost: 0 };
+    sum[r.currency].amount += amount;
+    sum[r.currency].cost += cost;
+  }
+  return Object.fromEntries(Object.entries(sum).map(([c, s]) => [c, { ...s, rate: s.cost / s.amount }]));
+}
+
+// 匯率顯示用：保留 4 位有效數字（0.2104、32.45、0.02315）
+export function roundRate(r) {
+  return Number(Number(r).toPrecision(4));
+}
