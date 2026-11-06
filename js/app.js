@@ -543,8 +543,12 @@ function blankDraft() {
   };
 }
 
-function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {}) {
+function sheetEditor(draftIn, { queueId = null, source: sourceIn = '', detail: detailIn = '' } = {}) {
   const t = S.trip;
+  let source = sourceIn;
+  let detail = detailIn;
+  let touched = false; // 使用者改過任何欄位後，AI 結果就不自動覆蓋
+  let pendingAi = null;
   const ed = { ...blankDraft(), ...draftIn };
   if (ed.items?.length && draftIn.useItems === undefined) ed.useItems = true;
   if (!ed.shares || !Object.keys(ed.shares).length) ed.shares = Object.fromEntries(t.members.map((m) => [m.id, 1]));
@@ -592,7 +596,8 @@ function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {})
     applyItems();
     const memberOpts = (sel) => t.members.map((m) => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)}${m.id === S.meId ? '（我）' : ''}</option>`).join('');
     body.innerHTML = `
-      <h3>${isNew ? (ed.type === 'transfer' ? '記錄轉帳' : '新增開支') : '編輯'}${source ? ` <span class="muted small">${esc(source)}</span>` : ''}</h3>${detail ? `<p class="muted small" style="margin:-8px 0 8px">${esc(detail)}</p>` : ''}
+      <h3>${isNew ? (ed.type === 'transfer' ? '記錄轉帳' : '新增開支') : '編輯'}${source ? ` <span class="muted small" id="ed-source">${esc(source)}</span>` : ''}</h3><p class="muted small" id="ed-detail" style="margin:-8px 0 8px">${esc(detail)}</p>
+      <div id="ai-ready"></div>
       ${ed._thumb ? `<img class="receipt-thumb" src="${ed._thumb}" alt="收據照片">` : ''}
       <div class="seg" style="margin-bottom:12px">
         <button data-act="type" data-v="expense" class="${ed.type !== 'transfer' ? 'on' : ''}">開支</button>
@@ -633,6 +638,7 @@ function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {})
   const body = openSheet((b) => draw(b));
   body.addEventListener('input', (ev) => {
     const el = ev.target;
+    touched = true;
     if (el.dataset.k && el.type !== 'checkbox') {
       ed[el.dataset.k] = el.value;
       if (el.tagName === 'SELECT' && el.dataset.k === 'currency') { draw(body); return; }
@@ -650,6 +656,7 @@ function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {})
   });
   body.addEventListener('change', (ev) => {
     const el = ev.target;
+    touched = true;
     if (el.dataset.memberOn) { ed.shares[el.dataset.memberOn] = el.checked ? 1 : 0; draw(body); }
     else if (el.dataset.k === 'useItems') {
       ed.useItems = el.checked;
@@ -661,7 +668,9 @@ function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {})
     const b = ev.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
+    if (['type', 'cat', 'mode', 'item-member'].includes(act)) touched = true;
     if (act === 'close') closeSheet();
+    else if (act === 'ai-apply') { Object.assign(ed, pendingAi); pendingAi = null; touched = false; draw(body); }
     else if (act === 'type') { ed.type = b.dataset.v; if (ed.type === 'transfer') { ed.title = '轉帳'; ed.currency = base(); } draw(body); }
     else if (act === 'cat') { ed.category = b.dataset.v; draw(body); }
     else if (act === 'mode') {
@@ -719,112 +728,177 @@ function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {})
       toast(S.online ? '已儲存' : '已存在手機，連上網路後會同步');
     }
   });
+
+  // 背景的 AI 解析完成後呼叫：還沒改過就直接套用；改過了就顯示「套用 AI 結果」讓使用者決定
+  return {
+    apply(patch, meta = {}) {
+      if (!body.isConnected) return; // 已經儲存或關掉了
+      if (meta.source != null) source = meta.source;
+      if (meta.detail != null) detail = meta.detail;
+      if (patch && !touched) { Object.assign(ed, patch); draw(body); return; }
+      const src = body.querySelector('#ed-source'); if (src) src.textContent = source;
+      const det = body.querySelector('#ed-detail'); if (det) det.textContent = detail;
+      if (patch) {
+        pendingAi = patch;
+        body.querySelector('#ai-ready').innerHTML = '<div class="banner"><div class="grow">AI 解析好了，要用 AI 的結果取代目前的內容嗎？</div><button class="btn primary" data-act="ai-apply">套用</button></div>';
+      }
+    },
+  };
 }
 
 // ---------- 語音記帳 ----------
+// iPhone 的語音辨識偶爾會卡住（不開始也不結束，WebKit 的已知問題），卡過一次通常要重開 App 才恢復。
+// 卡過就記下來，這次開 App 期間改用鍵盤上的麥克風。
+let micBroken = false;
+
 function sheetVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SR = micBroken ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
   let rec = null;
+  let watchdog = null;
   warmUpAiIfUsable();
+  const hint = micBroken
+    ? '<br>收音剛剛沒有反應，這次請點輸入框，用<b>鍵盤上的麥克風</b>說話（重開 App 後會恢復）。'
+    : SR ? '' : '<br>這個瀏覽器不支援直接收音，請點輸入框後用<b>鍵盤上的麥克風</b>說話。';
   const body = openSheet((b) => {
     b.innerHTML = `<h3>🎤 語音記帳</h3>
-      <p class="muted small" style="margin-top:-6px">說一句話，例如「午餐拉麵 2400 日圓 吳薰付 平分」「伴手禮 1580 台幣 我付 只算我」。
-      ${SR ? '' : '<br>這個瀏覽器不支援直接收音，請點輸入框後用<b>鍵盤上的麥克風</b>說話。'}</p>
+      <p class="muted small" style="margin-top:-6px">說一句話，例如「午餐拉麵 2400 日圓 吳薰付 平分」「伴手禮 1580 台幣 我付 只算我」。${hint}</p>
       <textarea id="v-text" placeholder="點這裡，用鍵盤麥克風說話，或直接打字"></textarea>
       <div class="foot">
         ${SR ? '<button class="btn" data-act="v-mic" id="v-mic">● 開始收音</button>' : '<button class="btn" data-act="close">取消</button>'}
         <button class="btn primary" data-act="v-parse" id="v-parse">解析</button></div>`;
-  }, () => { try { rec?.stop(); } catch { /* ignore */ } });
+  }, () => resetMic());
   const ta = body.querySelector('#v-text');
+  const micBtn = body.querySelector('#v-mic');
   if (!SR) setTimeout(() => ta.focus(), 250);
+
+  // 不論收音是正常結束、出錯還是卡住，都回到可以再按的狀態
+  function resetMic(msg) {
+    clearTimeout(watchdog);
+    const r = rec;
+    rec = null;
+    if (r) { r.onresult = r.onerror = r.onend = r.onstart = r.onaudiostart = null; try { r.abort(); } catch { /* ignore */ } }
+    if (micBtn) { micBtn.textContent = '● 開始收音'; micBtn.classList.remove('mic-on'); }
+    if (msg) toast(msg, 4500);
+  }
+  function micHung() {
+    micBroken = true;
+    resetMic('收音沒有反應。請點輸入框，用鍵盤上的麥克風說話');
+    if (micBtn) micBtn.remove();
+    ta.focus();
+  }
+
   body.addEventListener('click', async (ev) => {
     const b = ev.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'close') closeSheet();
     if (b.dataset.act === 'v-mic') {
-      if (rec) { rec.stop(); return; }
+      if (rec) {
+        // 按停止：正常會觸發 onend；1.5 秒內沒結束就強制停掉
+        try { rec.stop(); } catch { /* ignore */ }
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => resetMic(), 1500);
+        return;
+      }
+      let started = false;
       rec = new SR();
       rec.lang = 'zh-TW';
       rec.interimResults = true;
       rec.continuous = false;
       const startText = ta.value ? `${ta.value} ` : '';
-      rec.onresult = (e) => { ta.value = startText + [...e.results].map((r) => r[0].transcript).join(''); };
-      rec.onerror = (e) => {
-        toast(e.error === 'not-allowed' ? '沒有麥克風權限' : '收音失敗，可改用鍵盤上的麥克風');
+      rec.onstart = rec.onaudiostart = () => {
+        started = true;
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => resetMic(), 20000); // 一次最多收 20 秒
       };
-      rec.onend = () => { rec = null; b.textContent = '● 開始收音'; b.classList.remove('mic-on'); };
+      rec.onresult = (e) => { started = true; ta.value = startText + [...e.results].map((r) => r[0].transcript).join(''); };
+      rec.onerror = (e) => {
+        if (e.error === 'aborted') return;
+        resetMic(e.error === 'not-allowed' ? '沒有麥克風權限，請到「設定」允許，或用鍵盤上的麥克風'
+          : e.error === 'no-speech' ? '沒聽到聲音，請再按一次開始收音' : '收音失敗，可改用鍵盤上的麥克風');
+      };
+      rec.onend = () => resetMic();
       b.textContent = '■ 停止';
       b.classList.add('mic-on');
-      try { rec.start(); } catch { toast('收音失敗，可改用鍵盤上的麥克風'); }
+      // 3 秒內完全沒開始，就是卡住了
+      watchdog = setTimeout(() => { if (!started) micHung(); }, 3000);
+      try { rec.start(); } catch { micHung(); }
     }
     if (b.dataset.act === 'v-parse') {
       const text = ta.value.trim();
       if (!text) { toast('請先說一句話或打字'); return; }
-      b.disabled = true;
-      b.innerHTML = '<span class="spinner"></span>';
-      const draft = await parseVoice(text);
-      sheetEditor(draft.draft, { source: draft.source, detail: draft.aiDetail });
-      if (draft.aiError) toast(`AI 解析失敗，改用離線解析：${draft.aiError}`, 6000);
+      resetMic();
+      const useAi = S.online && aiEnabled();
+      // 先用離線解析馬上打開記帳畫面，AI 的結果回來再補上
+      const ctl = sheetEditor(localVoiceDraft(text), { source: useAi ? '離線解析・AI 解析中…' : '離線解析' });
+      if (!useAi) return;
+      aiVoiceDraft(text).then((r) => {
+        ctl.apply(r.draft, { source: r.source, detail: r.detail });
+      }).catch((err) => {
+        console.warn('AI 解析失敗，改用離線解析', err);
+        const msg = String(err?.message || err?.code || err);
+        ctl.apply(null, { source: '離線解析' });
+        if (document.getElementById('ed-source')) toast(`AI 解析失敗，保留離線解析：${msg === 'timeout' ? '等太久（超過 20 秒）' : msg.slice(0, 120)}`, 6000);
+      });
     }
   });
 }
 
-async function parseVoice(text) {
+function voiceContext() {
   const t = S.trip;
   const members = t.members.map((m) => ({ id: m.id, name: m.name }));
-  const meId = S.meId || members[0]?.id;
-  const local = parseExpenseText(text, { members, meId, defaultCurrency: t.defaultCurrency || base() });
-  let p = local;
-  let source = '離線解析';
-  let aiError = '';
-  let aiDetail = '';
-  if (S.online && aiEnabled()) {
-    try {
-      const t0 = performance.now();
-      const aiMod = await import('./ai.js');
-      const { parseTextWithAi } = aiMod;
-      const r = await withTimeout(parseTextWithAi(text, {
-        memberNames: members.map((m) => m.name),
-        meName: memberName(meId),
-        defaultCurrency: t.defaultCurrency || base(),
-        today: todayStr(),
-      }), 20000);
-      const findId = (n) => members.find((m) => n && (m.name === n || m.name.includes(n) || n.includes(m.name)))?.id;
-      const partIds = (r.participantNames || []).map(findId).filter(Boolean);
-      p = {
-        title: r.title || local.title,
-        amount: Number(r.amount) || local.amount,
-        currency: CURRENCIES.includes(r.currency) ? r.currency : local.currency,
-        payerId: findId(r.payerName) || local.payerId,
-        participantIds: partIds.length ? [...new Set(partIds)] : null,
-        category: CATEGORIES.some((c) => c.id === r.category) ? r.category : local.category,
-        date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : local.date,
-      };
-      source = `AI 解析・${secondsSince(t0)}`;
-      aiDetail = aiTimingText(aiMod);
-    } catch (err) {
-      console.warn('AI 解析失敗，改用離線解析', err);
-      const msg = String(err?.message || err?.code || err);
-      aiError = msg === 'timeout' ? '等太久（超過 20 秒）' : msg.slice(0, 120);
-    }
-  }
+  return { t, members, meId: S.meId || members[0]?.id };
+}
+
+// 解析結果 → 記帳畫面的欄位
+function voiceDraftFrom(p, text) {
+  const { t, meId } = voiceContext();
   const ids = p.participantIds || t.members.map((m) => m.id);
   return {
-    source,
-    aiError,
-    aiDetail,
-    draft: {
-      title: p.title,
-      amount: p.amount ?? '',
-      currency: p.currency,
-      payerId: p.payerId || meId,
-      date: p.date,
-      category: p.category,
-      splitMode: 'equal',
-      shares: Object.fromEntries(t.members.map((m) => [m.id, ids.includes(m.id) ? 1 : 0])),
-      note: `🎤 ${text}`,
-    },
+    title: p.title,
+    amount: p.amount ?? '',
+    currency: p.currency,
+    payerId: p.payerId || meId,
+    date: p.date,
+    category: p.category,
+    splitMode: 'equal',
+    shares: Object.fromEntries(t.members.map((m) => [m.id, ids.includes(m.id) ? 1 : 0])),
+    note: `🎤 ${text}`,
   };
+}
+
+function localVoiceParse(text) {
+  const { t, members, meId } = voiceContext();
+  return parseExpenseText(text, { members, meId, defaultCurrency: t.defaultCurrency || base() });
+}
+
+function localVoiceDraft(text) {
+  return voiceDraftFrom(localVoiceParse(text), text);
+}
+
+// AI 解析；AI 沒給的欄位用離線解析補
+async function aiVoiceDraft(text) {
+  const { t, members, meId } = voiceContext();
+  const local = localVoiceParse(text);
+  const t0 = performance.now();
+  const aiMod = await import('./ai.js');
+  const r = await withTimeout(aiMod.parseTextWithAi(text, {
+    memberNames: members.map((m) => m.name),
+    meName: memberName(meId),
+    defaultCurrency: t.defaultCurrency || base(),
+    today: todayStr(),
+  }), 20000);
+  const findId = (n) => members.find((m) => n && (m.name === n || m.name.includes(n) || n.includes(m.name)))?.id;
+  const partIds = (r.participantNames || []).map(findId).filter(Boolean);
+  const p = {
+    title: r.title || local.title,
+    amount: Number(r.amount) || local.amount,
+    currency: CURRENCIES.includes(r.currency) ? r.currency : local.currency,
+    payerId: findId(r.payerName) || local.payerId,
+    participantIds: partIds.length ? [...new Set(partIds)] : null,
+    category: CATEGORIES.some((c) => c.id === r.category) ? r.category : local.category,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : local.date,
+  };
+  return { draft: voiceDraftFrom(p, text), source: `AI 解析・${secondsSince(t0)}`, detail: aiTimingText(aiMod) };
 }
 
 // ---------- 拍明細 ----------
@@ -908,7 +982,7 @@ function sheetReceipts() {
 // ---------- 事件 ----------
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-act]');
-  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse'].includes(b.dataset.act)) return;
+  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply'].includes(b.dataset.act)) return;
   const act = b.dataset.act;
   const t = S.trip;
   switch (act) {

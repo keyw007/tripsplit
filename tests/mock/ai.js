@@ -15,7 +15,13 @@ export async function recognizeReceipt() {
     ],
   };
 }
-export async function parseTextWithAi() { throw new Error('mock: no ai'); }
+// 預設模擬 AI 失敗；測試可設定 window.__mockVoiceAi = { delay, result } 模擬 AI 回應
+export async function parseTextWithAi() {
+  const m = window.__mockVoiceAi;
+  if (!m) throw new Error('mock: no ai');
+  await new Promise((r) => setTimeout(r, m.delay || 500));
+  return m.result;
+}
 export function warmUpAi() {}
 export function getLastAiTiming() { return { prepMs: 120, tries: [{ name: 'mock-model', ms: 300, ok: true, thinking: true }], usage: { thoughtsTokenCount: 0 } }; }
 export function compressImage(file) {

@@ -48,6 +48,8 @@
 - 連結 Google 用 **redirect**（`linkWithRedirect` ＋ 啟動時 `getRedirectResult`）。popup 在 iOS 主畫面 App 會開到 Safari，儲存空間不同，App 收不到結果（1.2.6 實測失敗）。redirect 要求登入元件與 App 同網域，所以 `authDomain` 是 `keyw007.github.io`，登入元件放在 `keyw007/keyw007.github.io` repo 的 `__/auth/`，Google Cloud OAuth 用戶端已加轉址 `https://keyw007.github.io/__/auth/handler`。
 - App 圖示：原稿 `icons/icon.svg`（行李箱＋日圓硬幣），`icons/icon-maskable.svg` 是縮到 76% 的版本。改完執行 `python3 tools/render_icons.py` 產生 PNG，並把 `index.html`、`manifest.webmanifest` 裡的 `?v=` 加一。iPhone 主畫面圖示是加入當下存下來的，要刪掉主畫面 App 再重新加入才會換。
 - AI 速度（1.3.1）：語音用最少思考（Gemini 3 `thinkingLevel: MINIMAL`／2.5 `thinkingBudget: 0`），收據用 `LOW`／`1024`；模型不接受思考設定時拿掉再試一次（`js/ai.js` 的 `thinkingFor`）。打開語音／拍明細畫面時 `warmUpAi()` 先載入 SDK 和 App Check token。記帳畫面標題會顯示花了幾秒（「AI 解析・2.1 秒」）。照片長邊 1600、JPEG 品質 0.72。
+- 語音流程（1.3.4）：按解析後**馬上**用離線解析打開記帳畫面（「離線解析・AI 解析中…」），AI 在背景跑，回來後 `sheetEditor` 回傳的 `apply()` 套用；使用者已改過欄位就不覆蓋，改顯示「套用」。實測模型回應 2.4–5.4 秒（準備 0 秒），所以不等 AI。
+- iOS 收音（WebKit 已知問題）：`webkitSpeechRecognition` 偶爾 start 後沒有任何事件、也不結束。看門狗：3 秒沒開始就 `abort()`、提示用鍵盤麥克風、這次開 App 期間（`micBroken`）不再顯示收音鈕；一次最多 20 秒；按停止 1.5 秒沒結束就強制停。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試
@@ -57,6 +59,7 @@ node --test tests/core.test.mjs            # money.js、parse.js 單元測試
 python3 tests/ui_check.py /tmp/ui          # 完整畫面流程（tests/mock 假 Firebase／AI）截圖
 python3 tests/link_check.py /tmp/link      # 連結 Google 帳號流程
 python3 tests/update_check.py /tmp/upd      # 自動檢查更新（真的 service worker）
+python3 tests/voice_check.py /tmp/voice    # 語音：先離線再 AI、套用、收音卡住
 ```
 
 畫面測試用 Playwright 攔截 `js/firebase.js`、`js/ai.js` 換成 `tests/mock/`；新增 firebase.js 匯出函式時，mock 也要加同名函式。
