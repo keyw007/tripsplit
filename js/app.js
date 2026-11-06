@@ -2,7 +2,7 @@
 import {
   initFirebase, waitForUser, watchMyTrips, watchTrip, watchExpenses, getTripOnce,
   createTrip, updateTrip, joinTrip, deleteTrip, saveExpense, deleteExpense, newId,
-  accountInfo, linkGoogle, switchToGoogle,
+  accountInfo, linkGoogle, switchToGoogle, prepareGoogleLink,
 } from './firebase.js';
 import {
   formatMoney, toBase, owedShares, amountSplitGap, computeBalances, settle,
@@ -391,6 +391,7 @@ function renderAccountCard() {
       <div>✅ 已綁定 Google${a.email ? `：${esc(a.email)}` : ''}</div>
       <p class="muted small">換手機時，在新手機打開 tripsplit，按「連結 Google 帳號」選同一個 Google 帳號，就能拿回所有旅行。</p></div>`;
   }
+  prepareGoogleLink();
   return `<div class="card"><h2>帳號</h2>
     <div>匿名帳號（只存在這支手機）</div>
     <p class="muted small">綁定 Google 後，換手機或清掉瀏覽器資料，用同一個 Google 帳號登入就能拿回所有旅行與帳目。平常照樣不用登入。</p>
@@ -400,7 +401,7 @@ function renderAccountCard() {
 }
 
 const LINK_ERRORS = {
-  'auth/popup-blocked': '登入視窗被擋住了，請允許彈出視窗後再試一次',
+  'auth/popup-blocked': '登入視窗被擋住了，請再按一次',
   'auth/popup-closed-by-user': '已取消',
   'auth/cancelled-popup-request': '已取消',
   'auth/network-request-failed': '需要網路才能綁定 Google',

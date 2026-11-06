@@ -12,7 +12,16 @@ export async function initFirebase() {
     import(`${FIREBASE_SDK}/firebase-firestore.js`),
   ]);
   const app = appMod.initializeApp(firebaseConfig);
-  const auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence] });
+  // Google 登入視窗需要 popupRedirectResolver，少了它 linkWithPopup 會直接丟 auth/argument-error。
+  // Firebase 預設在 iOS 啟動時就先載入登入元件（要連 Google），山上網路差時會卡住開 App，
+  // 所以關掉預先載入，改在打開設定頁時才準備（prepareGoogleLink）。
+  class LazyPopupResolver extends au.browserPopupRedirectResolver {
+    get _shouldInitProactively() { return false; }
+  }
+  const auth = au.initializeAuth(app, {
+    persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence],
+    popupRedirectResolver: LazyPopupResolver,
+  });
   const db = fs.initializeFirestore(app, {
     localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }),
   });
@@ -48,6 +57,14 @@ export function accountInfo() {
   const u = fb.auth.currentUser;
   const google = u?.providerData?.find((p) => p.providerId === 'google.com');
   return { uid: u?.uid, isAnonymous: !!u?.isAnonymous, email: google?.email || '' };
+}
+
+// 先載入 Google 登入元件。iOS 只允許在點擊當下開視窗，若點了才載入，視窗會被擋掉，
+// 所以在顯示「連結 Google 帳號」按鈕時就先準備好。失敗沒關係，下次顯示時會再試。
+export function prepareGoogleLink() {
+  const { auth } = fb;
+  if (!auth.currentUser?.isAnonymous || !navigator.onLine) return;
+  auth._popupRedirectResolver?._initialize(auth).catch(() => {});
 }
 
 // 把目前的匿名帳號綁到 Google（uid 不變，旅行與帳目都留著）。

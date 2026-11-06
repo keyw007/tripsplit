@@ -43,6 +43,7 @@
 
 - 每次改動要同時調高 `js/config.js` 的 `APP_VERSION` 與 `sw.js` 的 `VERSION`，首頁最下面會顯示版本，方便確認手機拿到新版。
 - iPhone 主畫面 App 要「滑掉重開兩次」才會用到新版（第一次在背景更新）。
+- `initializeAuth` 必須帶 `popupRedirectResolver`，否則 `linkWithPopup` 直接丟 `auth/argument-error`（1.2.5 以前的 bug）。用子類別關掉 `_shouldInitProactively`，避免 iOS 啟動時連 Google 拖慢離線開 App；改由 `prepareGoogleLink()` 在顯示綁定按鈕時預先載入。畫面測試用 mock，抓不到這類 SDK 設定錯誤。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試
