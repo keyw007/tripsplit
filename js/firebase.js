@@ -12,9 +12,8 @@ export async function initFirebase() {
     import(`${FIREBASE_SDK}/firebase-firestore.js`),
   ]);
   const app = appMod.initializeApp(firebaseConfig);
-  // Google 登入視窗需要 popupRedirectResolver，少了它 linkWithPopup 會直接丟 auth/argument-error。
-  // Firebase 預設在 iOS 啟動時就先載入登入元件（要連 Google），山上網路差時會卡住開 App，
-  // 所以關掉預先載入，改在打開設定頁時才準備（prepareGoogleLink）。
+  // Google 登入需要 popupRedirectResolver，少了它會直接丟 auth/argument-error。
+  // Firebase 預設在 iOS 啟動時就先載入登入元件（要連網路），山上網路差時會卡住開 App，所以關掉預先載入。
   class LazyPopupResolver extends au.browserPopupRedirectResolver {
     get _shouldInitProactively() { return false; }
   }
@@ -59,27 +58,27 @@ export function accountInfo() {
   return { uid: u?.uid, isAnonymous: !!u?.isAnonymous, email: google?.email || '' };
 }
 
-// 先載入 Google 登入元件。iOS 只允許在點擊當下開視窗，若點了才載入，視窗會被擋掉，
-// 所以在顯示「連結 Google 帳號」按鈕時就先準備好。失敗沒關係，下次顯示時會再試。
-export function prepareGoogleLink() {
-  const { auth } = fb;
-  if (!auth.currentUser?.isAnonymous || !navigator.onLine) return;
-  auth._popupRedirectResolver?._initialize(auth).catch(() => {});
-}
-
 // 把目前的匿名帳號綁到 Google（uid 不變，旅行與帳目都留著）。
-// 這個 Google 帳號若已綁過別的手機，回傳 { status: 'exists', cred }，由畫面詢問要不要改用它。
+// 用 redirect：整個登入在 App 自己的視窗裡完成。iOS 主畫面 App 若用 popup，Google 視窗會開在 Safari，
+// 而 Safari 和主畫面 App 的儲存空間分開，App 收不到登入結果。
+// redirect 需要登入元件和 App 同網域，所以 authDomain 設成 keyw007.github.io，
+// 登入元件放在 keyw007/keyw007.github.io repo 的 __/auth/。
+// 呼叫後整個頁面會跳到 Google，回來時由 finishGoogleRedirect() 收結果。
 export async function linkGoogle() {
   const { auth, au } = fb;
   const provider = new au.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
+  if (auth.currentUser?.isAnonymous) await au.linkWithRedirect(auth.currentUser, provider);
+  else await au.signInWithRedirect(auth, provider);
+}
+
+// 從 Google 登入頁回來後呼叫。沒有進行中的綁定時回傳 null。
+// 這個 Google 帳號若已綁過別的手機，回傳 { status: 'exists', cred }，由畫面詢問要不要改用它。
+export async function finishGoogleRedirect() {
+  const { auth, au } = fb;
   try {
-    if (auth.currentUser?.isAnonymous) {
-      await au.linkWithPopup(auth.currentUser, provider);
-      return { status: 'linked' };
-    }
-    await au.signInWithPopup(auth, provider);
-    return { status: 'signed-in' };
+    const r = await au.getRedirectResult(auth);
+    return r ? { status: 'linked' } : null;
   } catch (err) {
     if (err.code === 'auth/credential-already-in-use' || err.code === 'auth/email-already-in-use') {
       return { status: 'exists', cred: au.GoogleAuthProvider.credentialFromError(err) };

@@ -2,7 +2,7 @@
 import {
   initFirebase, waitForUser, watchMyTrips, watchTrip, watchExpenses, getTripOnce,
   createTrip, updateTrip, joinTrip, deleteTrip, saveExpense, deleteExpense, newId,
-  accountInfo, linkGoogle, switchToGoogle, prepareGoogleLink,
+  accountInfo, linkGoogle, switchToGoogle, finishGoogleRedirect,
 } from './firebase.js';
 import {
   formatMoney, toBase, owedShares, amountSplitGap, computeBalances, settle,
@@ -391,12 +391,11 @@ function renderAccountCard() {
       <div>✅ 已綁定 Google${a.email ? `：${esc(a.email)}` : ''}</div>
       <p class="muted small">換手機時，在新手機打開 tripsplit，按「連結 Google 帳號」選同一個 Google 帳號，就能拿回所有旅行。</p></div>`;
   }
-  prepareGoogleLink();
   return `<div class="card"><h2>帳號</h2>
     <div>匿名帳號（只存在這支手機）</div>
     <p class="muted small">綁定 Google 後，換手機或清掉瀏覽器資料，用同一個 Google 帳號登入就能拿回所有旅行與帳目。平常照樣不用登入。</p>
     <button class="btn block" data-act="link-google">連結 Google 帳號</button>
-    ${isStandalone() ? '<p class="muted small">若 Google 視窗登入後沒有自動回到 App，回到 App 再按一次即可。請在這個 App 裡綁定，不要在 Safari 分頁綁定（兩邊的帳號是分開的）。</p>' : ''}
+    ${isStandalone() ? '<p class="muted small">請在這個 App 裡綁定，不要在 Safari 分頁綁定（兩邊的帳號是分開的）。</p>' : ''}
   </div>`;
 }
 
@@ -410,23 +409,41 @@ const LINK_ERRORS = {
 };
 
 async function doLinkGoogle() {
-  // 必須在點擊當下就開視窗，否則會被瀏覽器擋住
-  const p = linkGoogle();
+  if (!S.online) { toast('需要網路才能綁定 Google'); return; }
+  toast('前往 Google 登入…');
   try {
-    const r = await p;
-    if (r.status === 'exists') {
-      const ok = confirm('這個 Google 帳號已經綁過另一個 tripsplit 帳號（例如舊手機）。\n\n要改用它嗎？改用後會看到舊帳號的旅行；這支手機目前加入的旅行，之後可以用邀請連結重新加入。');
-      if (!ok) return;
-      await switchToGoogle(r.cred);
-      location.reload();
-      return;
-    }
-    toast('已綁定 Google 帳號');
-    render();
+    await linkGoogle(); // 成功的話頁面會跳到 Google，回來後由 handleGoogleRedirect() 接手
   } catch (err) {
     console.error('[linkGoogle]', err);
     toast(LINK_ERRORS[err.code] || `綁定失敗：${err.code || err.message}`, 4000);
   }
+}
+
+// 從 Google 登入頁回到 App 時，完成綁定或詢問是否改用已綁過的帳號
+async function handleGoogleRedirect() {
+  let r;
+  try {
+    r = await finishGoogleRedirect();
+  } catch (err) {
+    console.error('[googleRedirect]', err);
+    toast(LINK_ERRORS[err.code] || `綁定失敗：${err.code || err.message}`, 5000);
+    return;
+  }
+  if (!r) return;
+  if (r.status === 'exists') {
+    const ok = confirm('這個 Google 帳號已經綁過另一個 tripsplit 帳號（例如舊手機）。\n\n要改用它嗎？改用後會看到舊帳號的旅行；這支手機目前加入的旅行，之後可以用邀請連結重新加入。');
+    if (!ok) return;
+    try {
+      await switchToGoogle(r.cred);
+    } catch (err) {
+      toast(`切換失敗：${err.code || err.message}`, 4000);
+      return;
+    }
+    location.reload();
+    return;
+  }
+  toast('已綁定 Google 帳號');
+  render();
 }
 
 // ---------- 新增旅行 ----------
@@ -1012,6 +1029,7 @@ async function boot() {
     if (route().view === 'home') renderHome();
   });
   render();
+  if (S.online) handleGoogleRedirect();
 }
 
 boot();

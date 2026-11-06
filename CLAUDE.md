@@ -43,7 +43,8 @@
 
 - 每次改動要同時調高 `js/config.js` 的 `APP_VERSION` 與 `sw.js` 的 `VERSION`，首頁最下面會顯示版本，方便確認手機拿到新版。
 - iPhone 主畫面 App 要「滑掉重開兩次」才會用到新版（第一次在背景更新）。
-- `initializeAuth` 必須帶 `popupRedirectResolver`，否則 `linkWithPopup` 直接丟 `auth/argument-error`（1.2.5 以前的 bug）。用子類別關掉 `_shouldInitProactively`，避免 iOS 啟動時連 Google 拖慢離線開 App；改由 `prepareGoogleLink()` 在顯示綁定按鈕時預先載入。畫面測試用 mock，抓不到這類 SDK 設定錯誤。
+- `initializeAuth` 必須帶 `popupRedirectResolver`，否則 Google 登入直接丟 `auth/argument-error`。用子類別關掉 `_shouldInitProactively`，避免 iOS 啟動時連網路拖慢離線開 App。畫面測試用 mock，抓不到這類 SDK 設定錯誤。
+- 連結 Google 用 **redirect**（`linkWithRedirect` ＋ 啟動時 `getRedirectResult`）。popup 在 iOS 主畫面 App 會開到 Safari，儲存空間不同，App 收不到結果（1.2.6 實測失敗）。redirect 要求登入元件與 App 同網域，所以 `authDomain` 是 `keyw007.github.io`，登入元件放在 `keyw007/keyw007.github.io` repo 的 `__/auth/`，Google Cloud OAuth 用戶端已加轉址 `https://keyw007.github.io/__/auth/handler`。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試

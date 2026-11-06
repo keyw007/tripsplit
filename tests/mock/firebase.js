@@ -11,9 +11,11 @@ export function getFb() { return { app: {} }; }
 export async function waitForUser() { return user; }
 let linkedEmail = '';
 export function accountInfo() { return { uid: user.uid, isAnonymous: !linkedEmail, email: linkedEmail }; }
-export async function linkGoogle() { linkedEmail = 'keyw007@gmail.com'; return { status: 'linked' }; }
+// 假的 redirect：直接綁好，並讓下一次 finishGoogleRedirect() 回報成功
+let redirectPending = false;
+export async function linkGoogle() { linkedEmail = 'keyw007@gmail.com'; redirectPending = true; window.dispatchEvent(new HashChangeEvent('hashchange')); }
 export async function switchToGoogle() {}
-export function prepareGoogleLink() {}
+export async function finishGoogleRedirect() { return redirectPending ? (redirectPending = false, { status: 'linked' }) : null; }
 export function newId() { seq += 1; return `id${seq}${Math.random().toString(36).slice(2, 6)}`; }
 
 function emitTrips() {
