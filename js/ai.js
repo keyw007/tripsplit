@@ -52,26 +52,51 @@ function modelOrder() {
   return saved && AI_MODELS.includes(saved) ? [saved, ...AI_MODELS.filter((m) => m !== saved)] : AI_MODELS;
 }
 
+// 預先準備 AI：載入 SDK、App Check、取得 token。打開語音／拍明細畫面時先叫，
+// 使用者說話或拍照的這幾秒就準備好，按下解析時不用再等。失敗沒關係，真的呼叫時會再試。
+export function warmUpAi() {
+  ensureAi()
+    .then(() => (appCheckInst ? appCheckMod.getToken(appCheckInst) : null))
+    .catch(() => {});
+}
+
+// 「思考」會讓回應慢好幾秒。語音只是整理一句話，幾乎不需要思考；收據要對品項和總額，留一點。
+// Gemini 3 用 thinkingLevel，Gemini 2.5 用 thinkingBudget（tokens，0 = 不思考）。
+function thinkingFor(name, effort) {
+  if (/^gemini-3/.test(name)) return { thinkingLevel: effort === 'minimal' ? 'MINIMAL' : 'LOW' };
+  if (/flash/.test(name)) return { thinkingBudget: effort === 'minimal' ? 0 : 1024 };
+  return null;
+}
+
 // 依序嘗試模型，記住第一個成功的
-async function generateJson(parts, schema) {
+async function generateJson(parts, schema, effort = 'low') {
   const ai = await ensureAi();
   let lastErr = null;
   for (const name of modelOrder()) {
-    try {
-      const model = aiMod.getGenerativeModel(ai, {
-        model: name,
-        generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.1 },
-      });
-      const res = await model.generateContent(parts);
-      const text = res.response.text();
-      localStorage.setItem(MODEL_KEY, name);
-      return JSON.parse(text);
-    } catch (err) {
-      lastErr = err;
-      const msg = String(err?.message || err);
-      // 只有模型不存在或不支援時才換下一個；網路或額度問題直接回報
-      if (!/not found|404|not supported|unsupported|invalid model|is not found/i.test(msg)) break;
+    let thinking = thinkingFor(name, effort);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const model = aiMod.getGenerativeModel(ai, {
+          model: name,
+          generationConfig: {
+            responseMimeType: 'application/json', responseSchema: schema, temperature: 0.1,
+            ...(thinking ? { thinkingConfig: thinking } : {}),
+          },
+        });
+        const res = await model.generateContent(parts);
+        const text = res.response.text();
+        localStorage.setItem(MODEL_KEY, name);
+        return JSON.parse(text);
+      } catch (err) {
+        lastErr = err;
+        // 模型不接受這個思考設定時，拿掉設定用同一個模型再試一次
+        if (thinking && attempt === 0 && /thinking/i.test(String(err?.message || err))) { thinking = null; continue; }
+        break;
+      }
     }
+    const msg = String(lastErr?.message || lastErr);
+    // 只有模型不存在或不支援時才換下一個；網路或額度問題直接回報
+    if (!/not found|404|not supported|unsupported|invalid model|is not found/i.test(msg)) break;
   }
   if (/app check/i.test(String(lastErr?.message || ''))) {
     const why = await appCheckDiagnosis();
@@ -114,7 +139,7 @@ export async function recognizeReceipt(base64Jpeg, { defaultCurrency, memberName
     'total 是實際付款金額（含稅後、折扣後）。',
     `旅伴名字（若收據上有手寫標註可參考）：${memberNames.join('、')}。`,
   ].join('\n');
-  return generateJson([prompt, { inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } }], schema);
+  return generateJson([prompt, { inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } }], schema, 'low');
 }
 
 export async function parseTextWithAi(text, { memberNames, meName, defaultCurrency, today }) {
@@ -138,11 +163,11 @@ export async function parseTextWithAi(text, { memberNames, meName, defaultCurren
     '沒講誰付的，付錢的人就是我。說「各自」「只算我」時，分攤的人只有付錢的人。',
     `句子：「${text}」`,
   ].join('\n');
-  return generateJson([prompt], schema);
+  return generateJson([prompt], schema, 'minimal');
 }
 
-// 把照片縮小並轉成 JPEG base64（收據文字需要解析度，長邊 1600px）
-export function compressImage(file, maxSide = 1600, quality = 0.82) {
+// 把照片縮小並轉成 JPEG base64（收據文字需要解析度，長邊 1600px；品質 0.72 讓檔案小一點、上傳快一點）
+export function compressImage(file, maxSide = 1600, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);

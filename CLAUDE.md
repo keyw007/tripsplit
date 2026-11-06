@@ -47,6 +47,7 @@
 - `initializeAuth` 必須帶 `popupRedirectResolver`，否則 Google 登入直接丟 `auth/argument-error`。用子類別關掉 `_shouldInitProactively`，避免 iOS 啟動時連網路拖慢離線開 App。畫面測試用 mock，抓不到這類 SDK 設定錯誤。
 - 連結 Google 用 **redirect**（`linkWithRedirect` ＋ 啟動時 `getRedirectResult`）。popup 在 iOS 主畫面 App 會開到 Safari，儲存空間不同，App 收不到結果（1.2.6 實測失敗）。redirect 要求登入元件與 App 同網域，所以 `authDomain` 是 `keyw007.github.io`，登入元件放在 `keyw007/keyw007.github.io` repo 的 `__/auth/`，Google Cloud OAuth 用戶端已加轉址 `https://keyw007.github.io/__/auth/handler`。
 - App 圖示：原稿 `icons/icon.svg`（行李箱＋日圓硬幣），`icons/icon-maskable.svg` 是縮到 76% 的版本。改完執行 `python3 tools/render_icons.py` 產生 PNG，並把 `index.html`、`manifest.webmanifest` 裡的 `?v=` 加一。iPhone 主畫面圖示是加入當下存下來的，要刪掉主畫面 App 再重新加入才會換。
+- AI 速度（1.3.1）：語音用最少思考（Gemini 3 `thinkingLevel: MINIMAL`／2.5 `thinkingBudget: 0`），收據用 `LOW`／`1024`；模型不接受思考設定時拿掉再試一次（`js/ai.js` 的 `thinkingFor`）。打開語音／拍明細畫面時 `warmUpAi()` 先載入 SDK 和 App Check token。記帳畫面標題會顯示花了幾秒（「AI 解析・2.1 秒」）。照片長邊 1600、JPEG 品質 0.72。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試

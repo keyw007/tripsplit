@@ -80,6 +80,12 @@ function aiEnabled() {
 function inviteLink(id) {
   return `${location.origin}${location.pathname}#/join/${id}`;
 }
+// 打開語音／拍明細畫面時先在背景準備 AI，按下解析時就不用等載入
+function warmUpAiIfUsable() {
+  if (S.online && aiEnabled()) import('./ai.js').then((m) => m.warmUpAi()).catch(() => {});
+}
+const secondsSince = (t0) => `${((performance.now() - t0) / 1000).toFixed(1)} 秒`;
+
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 }
@@ -706,6 +712,7 @@ function sheetEditor(draftIn, { queueId = null, source = '' } = {}) {
 function sheetVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
+  warmUpAiIfUsable();
   const body = openSheet((b) => {
     b.innerHTML = `<h3>🎤 語音記帳</h3>
       <p class="muted small" style="margin-top:-6px">說一句話，例如「午餐拉麵 2400 日圓 吳薰付 平分」「伴手禮 1580 台幣 我付 只算我」。
@@ -759,6 +766,7 @@ async function parseVoice(text) {
   let aiError = '';
   if (S.online && aiEnabled()) {
     try {
+      const t0 = performance.now();
       const { parseTextWithAi } = await import('./ai.js');
       const r = await withTimeout(parseTextWithAi(text, {
         memberNames: members.map((m) => m.name),
@@ -777,7 +785,7 @@ async function parseVoice(text) {
         category: CATEGORIES.some((c) => c.id === r.category) ? r.category : local.category,
         date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : local.date,
       };
-      source = 'AI 解析';
+      source = `AI 解析・${secondsSince(t0)}`;
     } catch (err) {
       console.warn('AI 解析失敗，改用離線解析', err);
       const msg = String(err?.message || err?.code || err);
@@ -804,6 +812,7 @@ async function parseVoice(text) {
 
 // ---------- 拍明細 ----------
 function sheetCameraChoice() {
+  warmUpAiIfUsable();
   openSheet((b) => {
     b.innerHTML = `<h3>📷 拍明細</h3>
       <p class="muted small" style="margin-top:-6px">${S.online && aiEnabled() ? '拍好後 AI 會自動辨識金額和品項，你可以再調整每個品項由誰分攤。' : '目前沒有網路，照片會先存在手機，有網路時再辨識。'}</p>
@@ -833,6 +842,7 @@ async function recognizeAndEdit(item, fromQueue) {
   openSheet((b) => {
     b.innerHTML = `<h3>辨識中…</h3><img class="receipt-thumb" src="${item.dataUrl}" alt="收據照片"><p class="muted" style="text-align:center"><span class="spinner"></span> AI 正在讀收據</p>`;
   });
+  const t0 = performance.now();
   try {
     const { recognizeReceipt } = await import('./ai.js');
     const r = await withTimeout(recognizeReceipt(item.dataUrl.split(',')[1], {
@@ -852,7 +862,7 @@ async function recognizeAndEdit(item, fromQueue) {
       category: CATEGORIES.some((c) => c.id === r.category) ? r.category : guessCategory(`${r.store} ${r.titleZh}`),
       items,
       _thumb: item.dataUrl,
-    }, { queueId: fromQueue ? item.id : null, source: '收據辨識' });
+    }, { queueId: fromQueue ? item.id : null, source: `收據辨識・${secondsSince(t0)}` });
   } catch (err) {
     console.error(err);
     if (!fromQueue) { await queueReceipt(item); await refreshReceipts(); }
