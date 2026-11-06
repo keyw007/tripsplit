@@ -17,6 +17,7 @@ export async function recognizeReceipt() {
 }
 export async function parseTextWithAi() { throw new Error('mock: no ai'); }
 export function warmUpAi() {}
+export function getLastAiTiming() { return { prepMs: 120, tries: [{ name: 'mock-model', ms: 300, ok: true, thinking: true }], usage: { thoughtsTokenCount: 0 } }; }
 export function compressImage(file) {
   return new Promise((resolve) => {
     const fr = new FileReader();

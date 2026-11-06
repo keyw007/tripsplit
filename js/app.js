@@ -85,6 +85,15 @@ function warmUpAiIfUsable() {
   if (S.online && aiEnabled()) import('./ai.js').then((m) => m.warmUpAi()).catch(() => {});
 }
 const secondsSince = (t0) => `${((performance.now() - t0) / 1000).toFixed(1)} 秒`;
+const sec = (ms) => (ms / 1000).toFixed(1);
+// 把 AI 時間拆成「準備」和每次模型呼叫，例如「準備 0.1＋gemini-3.6-flash 2.3（思考 0）」
+function aiTimingText(aiMod) {
+  const t = aiMod.getLastAiTiming?.();
+  if (!t) return '';
+  const calls = t.tries.map((c) => `${c.name}${c.ok ? '' : '✗'}${c.thinking ? '' : '(無思考設定)'} ${sec(c.ms)}`).join('＋');
+  const thoughts = t.usage?.thoughtsTokenCount;
+  return `準備 ${sec(t.prepMs)}＋${calls}${thoughts != null ? `，思考 ${thoughts} tokens` : ''}`;
+}
 
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
@@ -534,7 +543,7 @@ function blankDraft() {
   };
 }
 
-function sheetEditor(draftIn, { queueId = null, source = '' } = {}) {
+function sheetEditor(draftIn, { queueId = null, source = '', detail = '' } = {}) {
   const t = S.trip;
   const ed = { ...blankDraft(), ...draftIn };
   if (ed.items?.length && draftIn.useItems === undefined) ed.useItems = true;
@@ -583,7 +592,7 @@ function sheetEditor(draftIn, { queueId = null, source = '' } = {}) {
     applyItems();
     const memberOpts = (sel) => t.members.map((m) => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)}${m.id === S.meId ? '（我）' : ''}</option>`).join('');
     body.innerHTML = `
-      <h3>${isNew ? (ed.type === 'transfer' ? '記錄轉帳' : '新增開支') : '編輯'}${source ? ` <span class="muted small">${esc(source)}</span>` : ''}</h3>
+      <h3>${isNew ? (ed.type === 'transfer' ? '記錄轉帳' : '新增開支') : '編輯'}${source ? ` <span class="muted small">${esc(source)}</span>` : ''}</h3>${detail ? `<p class="muted small" style="margin:-8px 0 8px">${esc(detail)}</p>` : ''}
       ${ed._thumb ? `<img class="receipt-thumb" src="${ed._thumb}" alt="收據照片">` : ''}
       <div class="seg" style="margin-bottom:12px">
         <button data-act="type" data-v="expense" class="${ed.type !== 'transfer' ? 'on' : ''}">開支</button>
@@ -754,7 +763,7 @@ function sheetVoice() {
       b.disabled = true;
       b.innerHTML = '<span class="spinner"></span>';
       const draft = await parseVoice(text);
-      sheetEditor(draft.draft, { source: draft.source });
+      sheetEditor(draft.draft, { source: draft.source, detail: draft.aiDetail });
       if (draft.aiError) toast(`AI 解析失敗，改用離線解析：${draft.aiError}`, 6000);
     }
   });
@@ -768,10 +777,12 @@ async function parseVoice(text) {
   let p = local;
   let source = '離線解析';
   let aiError = '';
+  let aiDetail = '';
   if (S.online && aiEnabled()) {
     try {
       const t0 = performance.now();
-      const { parseTextWithAi } = await import('./ai.js');
+      const aiMod = await import('./ai.js');
+      const { parseTextWithAi } = aiMod;
       const r = await withTimeout(parseTextWithAi(text, {
         memberNames: members.map((m) => m.name),
         meName: memberName(meId),
@@ -790,6 +801,7 @@ async function parseVoice(text) {
         date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : local.date,
       };
       source = `AI 解析・${secondsSince(t0)}`;
+      aiDetail = aiTimingText(aiMod);
     } catch (err) {
       console.warn('AI 解析失敗，改用離線解析', err);
       const msg = String(err?.message || err?.code || err);
@@ -800,6 +812,7 @@ async function parseVoice(text) {
   return {
     source,
     aiError,
+    aiDetail,
     draft: {
       title: p.title,
       amount: p.amount ?? '',
@@ -848,7 +861,8 @@ async function recognizeAndEdit(item, fromQueue) {
   });
   const t0 = performance.now();
   try {
-    const { recognizeReceipt } = await import('./ai.js');
+    const aiMod = await import('./ai.js');
+    const { recognizeReceipt } = aiMod;
     const r = await withTimeout(recognizeReceipt(item.dataUrl.split(',')[1], {
       defaultCurrency: t.defaultCurrency || base(),
       memberNames: t.members.map((m) => m.name),
@@ -866,7 +880,7 @@ async function recognizeAndEdit(item, fromQueue) {
       category: CATEGORIES.some((c) => c.id === r.category) ? r.category : guessCategory(`${r.store} ${r.titleZh}`),
       items,
       _thumb: item.dataUrl,
-    }, { queueId: fromQueue ? item.id : null, source: `收據辨識・${secondsSince(t0)}` });
+    }, { queueId: fromQueue ? item.id : null, source: `收據辨識・${secondsSince(t0)}`, detail: aiTimingText(aiMod) });
   } catch (err) {
     console.error(err);
     if (!fromQueue) { await queueReceipt(item); await refreshReceipts(); }

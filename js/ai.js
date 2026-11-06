@@ -68,13 +68,21 @@ function thinkingFor(name, effort) {
   return null;
 }
 
+// 最近一次 AI 呼叫的時間拆解，顯示在記帳畫面方便找出慢在哪
+let lastTiming = null;
+export function getLastAiTiming() { return lastTiming; }
+
 // 依序嘗試模型，記住第一個成功的
 async function generateJson(parts, schema, effort = 'low') {
+  const t0 = performance.now();
   const ai = await ensureAi();
+  const prepMs = performance.now() - t0;
+  const tries = [];
   let lastErr = null;
   for (const name of modelOrder()) {
     let thinking = thinkingFor(name, effort);
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const tc = performance.now();
       try {
         const model = aiMod.getGenerativeModel(ai, {
           model: name,
@@ -86,8 +94,12 @@ async function generateJson(parts, schema, effort = 'low') {
         const res = await model.generateContent(parts);
         const text = res.response.text();
         localStorage.setItem(MODEL_KEY, name);
+        tries.push({ name, ms: performance.now() - tc, ok: true, thinking: !!thinking });
+        lastTiming = { prepMs, tries, usage: res.response.usageMetadata || null };
         return JSON.parse(text);
       } catch (err) {
+        tries.push({ name, ms: performance.now() - tc, ok: false, thinking: !!thinking });
+        lastTiming = { prepMs, tries, usage: null };
         lastErr = err;
         // 模型不接受這個思考設定時，拿掉設定用同一個模型再試一次
         if (thinking && attempt === 0 && /thinking/i.test(String(err?.message || err))) { thinking = null; continue; }
