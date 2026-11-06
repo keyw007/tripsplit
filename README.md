@@ -2,6 +2,8 @@
 
 離線也能用的多人旅行分帳 PWA。
 
+**使用說明**：打開 https://keyw007.github.io/tripsplit/ → 首頁最下面「📖 使用說明」（網址 `#/help`）。
+
 - **離線記帳**：沒網路時記的帳先存在手機，連上網路自動同步（Firestore 離線快取）
 - **多人、多趟旅行**：用邀請連結加入，每趟只有成員看得到
 - **多幣別**：每筆用當地幣別記，結算時依匯率換成結算幣別
@@ -18,6 +20,7 @@
 | 檔案 | 用途 |
 |---|---|
 | `js/app.js` | 畫面、路由、記帳流程 |
+| `js/help.js` | App 內使用說明頁 |
 | `js/money.js` | 換匯、分攤、餘額、結算（純函式） |
 | `js/parse.js` | 語音／文字離線解析（純函式） |
 | `js/firebase.js` | 匿名登入、Google 綁定、Firestore 讀寫 |
@@ -32,12 +35,16 @@
 2. Authentication → 設定 → 授權網域 → 加入 `keyw007.github.io`
 3. Firestore Database → 建立資料庫（正式環境模式）→ 規則：貼上 `firestore.rules` 內容並發布
 4. AI Logic → 開始使用 → Gemini Developer API
-5. App Check（AI Logic 自 2026/11/2 起強制）：在 Google Cloud Fraud Defense（舊稱 reCAPTCHA Enterprise）建立網站金鑰（網域 keyw007.github.io、不用核取方塊），在 App Check → 應用程式用 Fraud Defense 註冊網頁 App，再把金鑰填進 `js/config.js` 的 `APP_CHECK.key`
+5. Google 登入用 redirect，登入元件要和 App 同網域：`keyw007/keyw007.github.io` repo 放 `__/auth/`（用該 repo 的 Action「更新 Firebase 登入元件」從 firebaseapp.com 抓）與 `__/firebase/init.json`，`js/config.js` 的 `authDomain` 設 `keyw007.github.io`
+6. Google Cloud → API 和服務 → 憑證 → OAuth 用戶端「Web client (auto created by Google Service)」：重新導向 URI 加 `https://keyw007.github.io/__/auth/handler`，JavaScript 來源加 `https://keyw007.github.io`
+7. App Check（AI Logic 自 2026/11/2 起強制）：在 Google Cloud Fraud Defense（舊稱 reCAPTCHA Enterprise）建立網站金鑰（網域 keyw007.github.io、不用核取方塊），在 App Check → 應用程式用 Fraud Defense 註冊網頁 App，再把金鑰填進 `js/config.js` 的 `APP_CHECK.key`
 
 ## 測試
 
 ```bash
 node --test tests/core.test.mjs
+python3 tests/ui_check.py /tmp/ui
+python3 tests/link_check.py /tmp/link
 ```
 
 `tests/mock/` 是畫面測試用的假 Firebase 與假 AI。

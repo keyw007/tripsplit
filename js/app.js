@@ -11,6 +11,7 @@ import {
 import { parseExpenseText, CATEGORIES, guessCategory } from './parse.js';
 import { getMe, setMe, getPref, setPref, queueReceipt, listReceipts, removeReceipt } from './store.js';
 import { APP_VERSION } from './config.js';
+import { helpHtml, platform, isStandalone } from './help.js';
 
 const CURRENCIES = ['TWD', 'JPY', 'USD', 'KRW', 'EUR', 'HKD', 'CNY', 'THB'];
 const TABS = [
@@ -103,6 +104,7 @@ function closeSheet() {
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const parts = h.split('/').filter(Boolean);
+  if (parts[0] === 'help') return { view: 'help' };
   if (parts[0] === 'join' && parts[1]) return { view: 'join', tripId: parts[1] };
   if (parts[0] === 't' && parts[1]) return { view: 'trip', tripId: parts[1], tab: TABS.some((t) => t.id === parts[2]) ? parts[2] : 'list' };
   return { view: 'home' };
@@ -161,6 +163,7 @@ function render() {
   if (!S.user) return;
   if (r.view === 'home') { leaveTrip(); renderHome(); return; }
   if (r.view === 'join') { renderJoin(r.tripId); return; }
+  if (r.view === 'help') { leaveTrip(); renderHelp(); return; }
   enterTrip(r.tripId);
   renderTrip(r.tab);
 }
@@ -177,16 +180,18 @@ function renderHome() {
   $app.innerHTML = `
     <header class="topbar"><h1>✈️ 旅行分帳</h1>${S.online ? '' : '<span class="sync off">離線</span>'}</header>
     <main>
+      ${installBanner()}
       ${trips.length ? trips.map((t) => `
         <a class="card trip-card" href="#/t/${t.id}/list">
           <div class="name">${esc(t.name)}${t._pending ? '<span class="pending-dot"></span>' : ''}</div>
           <div class="muted small">${esc((t.members || []).map((m) => m.name).join('、'))}</div>
-        </a>`).join('') : '<div class="empty">還沒有旅行。<br>新增一趟，或打開旅伴傳來的邀請連結加入。</div>'}
+        </a>`).join('') : '<div class="empty">還沒有旅行。<br>新增一趟，或用旅伴傳來的邀請連結加入。<br><a href="#/help">第一次用？看使用說明</a></div>'}
       <button class="btn primary block" data-act="new-trip">＋ 新增旅行</button>
       <div style="height:10px"></div>
       <button class="btn block" data-act="join-paste">用邀請連結加入</button>
       <div style="height:16px"></div>
       ${renderAccountCard()}
+      <a class="btn block" href="#/help">📖 使用說明</a>
       <p class="muted small" style="text-align:center;margin-top:24px">v${APP_VERSION}</p>
     </main>`;
 }
@@ -213,6 +218,7 @@ async function renderJoin(tripId) {
   }
   const free = trip.members.filter((m) => !m.uid);
   $app.querySelector('main').innerHTML = `
+    ${platform() === 'ios' && !isStandalone() ? `<div class="banner"><div class="grow">你現在是在 Safari 或 LINE 裡打開。<b>請不要在這裡加入</b>，不然主畫面 App 會看不到這趟旅行。<br>請先把旅行分帳加入主畫面，再從主畫面 App 首頁按「用邀請連結加入」，貼上這個連結。</div><button class="btn" data-act="copy-here">複製連結</button></div>` : ''}
     <div class="card"><h2>邀請你加入</h2><div style="font-size:20px;font-weight:800">${esc(trip.name)}</div>
       <div class="muted small">成員：${esc(trip.members.map((m) => m.name).join('、'))}</div></div>
     <div class="card"><h2>你是哪一位？</h2>
@@ -376,13 +382,27 @@ function tabSettings() {
       <button class="btn block" data-act="export">匯出 CSV（可匯入 Google 試算表）</button>
       ${isOwner ? '<div style="height:8px"></div><button class="btn danger block" data-act="delete-trip">刪除這趟旅行</button>' : ''}
       <p class="muted small">v${APP_VERSION}・帳號 ${esc(S.user.uid.slice(0, 6))}</p></div>
-    ${renderAccountCard()}`;
+    ${renderAccountCard()}
+    <a class="btn block" href="#/help">📖 使用說明</a>`;
+}
+
+// ---------- 使用說明 ----------
+function renderHelp() {
+  $app.innerHTML = `
+    <header class="topbar"><a class="icon-btn" href="#/" data-act="back" aria-label="返回">‹</a><h1>使用說明</h1></header>
+    <main>${helpHtml()}<p class="muted small" style="text-align:center;margin-top:24px">v${APP_VERSION}</p></main>`;
+}
+
+// 還沒加入主畫面時，在首頁提醒（iPhone 的 Safari 分頁和主畫面 App 是不同帳號，特別重要）
+function installBanner() {
+  if (isStandalone()) return '';
+  const p = platform();
+  if (p === 'ios') return '<div class="banner"><div class="grow">建議先加入主畫面：按 Safari 下方的分享鈕 →「加入主畫面」，之後從主畫面打開。<b>Safari 分頁和主畫面 App 的帳號是分開的</b>，請只用其中一個。</div><a class="btn" href="#/help">說明</a></div>';
+  if (p === 'android') return '<div class="banner"><div class="grow">建議安裝到主畫面：Chrome 右上角 ⋮ →「安裝應用程式」或「加到主畫面」。</div><a class="btn" href="#/help">說明</a></div>';
+  return '';
 }
 
 // ---------- 帳號（Google 備份） ----------
-function isStandalone() {
-  return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-}
 
 function renderAccountCard() {
   const a = accountInfo();
@@ -867,6 +887,17 @@ document.addEventListener('click', async (ev) => {
     case 'close': closeSheet(); break;
     case 'new-trip': sheetNewTrip(); break;
     case 'nt-create': doCreateTrip(); break;
+    case 'back': {
+      // 從 App 內其他頁面進來就回上一頁，直接打開說明頁時回首頁
+      ev.preventDefault();
+      if (S.navCount > 0) history.back(); else go('#/');
+      break;
+    }
+    case 'copy-here': {
+      try { await navigator.clipboard.writeText(location.href); toast('已複製，到主畫面 App 首頁按「用邀請連結加入」貼上'); }
+      catch { prompt('請複製這個連結', location.href); }
+      break;
+    }
     case 'join-paste': {
       const url = prompt('貼上旅伴傳來的邀請連結');
       const m = url && url.match(/join\/([A-Za-z0-9]+)/);
@@ -1008,7 +1039,7 @@ function exportCsv() {
 }
 
 // ---------- 啟動 ----------
-window.addEventListener('hashchange', () => { closeSheet(); render(); });
+window.addEventListener('hashchange', () => { S.navCount = (S.navCount || 0) + 1; closeSheet(); render(); });
 window.addEventListener('online', () => { S.online = true; render(); if (S.receipts.length) toast(`有 ${S.receipts.length} 張明細可以辨識了`); });
 window.addEventListener('offline', () => { S.online = false; render(); });
 

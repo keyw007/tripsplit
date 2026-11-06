@@ -19,7 +19,8 @@
 
 | 檔案 | 用途 |
 |---|---|
-| `js/app.js` | 畫面、路由（`#/`、`#/join/<id>`、`#/t/<id>/<list\|settle\|stats\|settings>`）、記帳流程；全域狀態 `S`，事件用 `data-act` 統一分派 |
+| `js/help.js` | 使用說明頁內容（`#/help`）、`platform()`、`isStandalone()`。**改了操作流程或介面文字，要一併更新這裡的說明** |
+| `js/app.js` | 畫面、路由（`#/`、`#/help`、`#/join/<id>`、`#/t/<id>/<list\|settle\|stats\|settings>`）、記帳流程；全域狀態 `S`，事件用 `data-act` 統一分派 |
 | `js/money.js` | 換匯、分攤（equal/amount/shares）、餘額、結算、收據拆分（純函式，有單元測試） |
 | `js/parse.js` | 語音／文字離線解析（純函式，有單元測試） |
 | `js/firebase.js` | 匿名登入、Google 綁定、Firestore 讀寫 |
@@ -61,5 +62,6 @@ python3 tests/link_check.py /tmp/link      # 連結 Google 帳號流程
 ## 目前狀態（2026-11-06）
 
 - 已在 iPhone 主畫面 App 實測成功：建立旅行、記帳、同步、收據辨識（AI＋App Check）、語音 AI 解析、連結 Google 帳號（1.2.7，redirect）、刪掉主畫面 App 重新加入後用同一個 Google 帳號拿回旅行（1.2.8，`credential-already-in-use` → 確認 → 切換帳號）。
-- 尚未實測：邀請連結加入（吳薰的手機）。
+- 1.2.9 加了 App 內使用說明（`#/help`）。iPhone 用 Safari 分頁打開時，首頁和邀請加入頁會提醒「先加入主畫面、在主畫面 App 用『用邀請連結加入』貼上」（Safari 分頁和主畫面 App 帳號不同）。
+- 尚未實測：邀請連結加入（吳薰的手機）、Android（安裝、語音、拍明細、Google 綁定）。
 - 可能的下一步：日幣現金追蹤；匯率自動抓取。
