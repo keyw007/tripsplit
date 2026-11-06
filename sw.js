@@ -1,6 +1,6 @@
 // 離線殼：App 檔案與 Firebase SDK 存在手機上，沒網路也能打開。
 // 帳目資料由 Firestore 自己的離線快取處理，這裡不攔截 Firestore 的連線。
-const VERSION = 'tripsplit-v1.2.0';
+const VERSION = 'tripsplit-v1.2.1';
 const SHELL = [
   './',
   './index.html',
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
     }
     // App 檔案：先用網路拿最新版，沒網路才用快取
     try {
-      const res = await fetch(req);
+      const res = await fetch(req, { cache: 'no-cache' }); // 不用瀏覽器 HTTP 快取，改版後馬上拿到新檔
       if (res.ok) cache.put(req, res.clone());
       return res;
     } catch {

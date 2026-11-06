@@ -19,6 +19,8 @@ async function ensureAi() {
 
 // Firebase AI Logic 需要 App Check 證明請求來自這個網站（用 reCAPTCHA，使用者不會看到驗證框）
 let appCheckReady = null;
+let appCheckMod = null;
+let appCheckInst = null;
 function ensureAppCheck(app) {
   if (!APP_CHECK.key) return Promise.resolve();
   if (!appCheckReady) {
@@ -26,10 +28,23 @@ function ensureAppCheck(app) {
       const provider = APP_CHECK.type === 'enterprise'
         ? new ac.ReCaptchaEnterpriseProvider(APP_CHECK.key)
         : new ac.ReCaptchaV3Provider(APP_CHECK.key);
-      ac.initializeAppCheck(app, { provider, isTokenAutoRefreshEnabled: true });
+      appCheckMod = ac;
+      appCheckInst = ac.initializeAppCheck(app, { provider, isTokenAutoRefreshEnabled: true });
     }).catch((err) => { appCheckReady = null; throw err; });
   }
   return appCheckReady;
+}
+
+// App Check 失敗時查原因，顯示在錯誤訊息裡方便排查
+async function appCheckDiagnosis() {
+  if (!APP_CHECK.key) return 'App Check 金鑰還沒設定';
+  if (!appCheckInst) return 'App Check 沒有載入';
+  try {
+    const t = await appCheckMod.getToken(appCheckInst, true);
+    return t?.token ? '已取得 App Check token，但伺服器不接受：請確認 Firebase App Check 已用 Fraud Defense 註冊這把金鑰' : '取不到 App Check token';
+  } catch (e) {
+    return `取不到 App Check token：${e?.code || e?.message || e}`;
+  }
 }
 
 function modelOrder() {
@@ -57,6 +72,12 @@ async function generateJson(parts, schema) {
       // 只有模型不存在或不支援時才換下一個；網路或額度問題直接回報
       if (!/not found|404|not supported|unsupported|invalid model|is not found/i.test(msg)) break;
     }
+  }
+  if (/app check/i.test(String(lastErr?.message || ''))) {
+    const why = await appCheckDiagnosis();
+    const e = new Error(`${why}（${lastErr.message}）`);
+    e.code = lastErr.code;
+    throw e;
   }
   throw lastErr || new Error('AI 無法使用');
 }
