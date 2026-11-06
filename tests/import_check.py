@@ -63,10 +63,30 @@ try:
         print('3 CSV 再匯入：標示已經匯入過', dups, '筆；按鈕：', page.inner_text('[data-act=im-save]'))
         page.screenshot(path=str(OUT / '3_dups.png'), full_page=True)
 
-        # 4. 沒有標題列
+        # 4. 截圖（AI）：標題不同但日期金額相同 → 可能重複；其他預設勾、付款人是我
         page.click('.sheet-bg', position={'x': 20, 'y': 20})
-        page.click('[data-act=import]'); page.fill('#im-text', '\n'.join('\t'.join(r) for r in ROWS)); page.click('[data-act=im-read]')
-        page.wait_for_selector('#toast:has-text("標題列")'); print('4 沒標題列：', page.inner_text('#toast'))
+        from PIL import Image
+        for n in ('shot1.png', 'shot2.png'): Image.new('RGB', (300, 600), 'white').save(OUT / n)
+        page.click('[data-act=import]'); page.set_input_files('#im-shots', [str(OUT / 'shot1.png'), str(OUT / 'shot2.png')])
+        page.wait_for_selector('text=確認要匯入的開支')
+        print('4 截圖：送給 AI', page.evaluate('window.__lastExtract.images'), '張；', page.inner_text('h3'))
+        for r in page.locator('.im-row').all():
+            print('  ', '☑' if r.locator('input').is_checked() else '☐', r.inner_text().replace('\n', '｜'))
+        page.screenshot(path=str(OUT / '4_ai_review.png'), full_page=True)
+        page.click('[data-act=im-save]'); page.wait_for_selector('#toast:has-text("已匯入")'); print('  ', page.inner_text('#toast'))
+
+        # 5. 貼上沒有標題列的文字（確認信）→ 自動交給 AI
+        page.click('[data-act=import]'); page.fill('#im-text', '預訂確認 VIA INN 名古屋 入住 2026/12/25 金額 NT$2,500'); page.click('[data-act=im-read]')
+        page.wait_for_selector('text=確認要匯入的開支')
+        print('5 貼文字：AI 收到文字？', '預訂確認' in page.evaluate('window.__lastExtract.text'), '；按鈕', page.inner_text('[data-act=im-save]'))
+
+        # 6. AI 關掉時，沒有標題列 → 提示要含標題列
+        page.click('.sheet-bg', position={'x': 20, 'y': 20})
+        page.evaluate("localStorage.setItem('ts_pref_ai', 'false')")
+        page.click('[data-act=import]')
+        print('6 AI 關閉：截圖按鈕停用？', page.locator('[data-act=im-shot]').is_disabled())
+        page.fill('#im-text', '\n'.join('\t'.join(r) for r in ROWS)); page.click('[data-act=im-read]')
+        page.wait_for_selector('#toast:has-text("標題列")'); print('  ', page.inner_text('#toast'))
         ctx.close(); b.close()
         print('OK')
 finally:

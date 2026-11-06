@@ -135,9 +135,34 @@ export function rowsToItems(rows, { members, today = new Date() }) {
   return { items, error: '' };
 }
 
-// 已經記過的：同日期、同幣別、同金額、同標題
+// 已經記過的：同日期、同幣別、同金額、同標題 →「已經匯入過」；
+// 只有日期、幣別、金額相同（例如 AI 取的標題不一樣）→「可能和某筆重複」。兩種都不勾。
 export function markDuplicates(items, expenses) {
-  const key = (e) => `${e.date}|${e.currency}|${Number(e.amount)}|${(e.title || '').trim()}`;
-  const have = new Set(expenses.map(key));
-  return items.map((it) => (have.has(key(it)) ? { ...it, checked: false, reason: '已經匯入過', dup: true } : it));
+  const exact = (e) => `${e.date}|${e.currency}|${Number(e.amount)}|${(e.title || '').trim()}`;
+  const loose = (e) => `${e.date}|${e.currency}|${Number(e.amount)}`;
+  const have = new Set(expenses.map(exact));
+  const similar = new Map(expenses.map((e) => [loose(e), e.title || '']));
+  return items.map((it) => {
+    if (have.has(exact(it))) return { ...it, checked: false, reason: '已經匯入過', dup: true };
+    if (similar.has(loose(it))) return { ...it, checked: false, reason: `可能和「${similar.get(loose(it))}」重複`, dup: true };
+    return it;
+  });
+}
+
+// AI 讀出的項目 → 匯入清單的格式（刷卡的人預設是我，全部先勾）
+export function aiToItems(list, { meId, currencies, categories, guess, today = new Date() }) {
+  return list
+    .filter((x) => Number(x.amount) > 0 && (x.title || '').trim())
+    .map((x) => ({
+      title: x.title.trim(),
+      amount: Number(x.amount),
+      currency: currencies.includes(x.currency) ? x.currency : currencies[0],
+      category: categories.includes(x.category) ? x.category : guess(x.title),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? x.date : parseDate(x.date, today) || '',
+      payerId: meId || null,
+      payMethod: 'card',
+      note: 'AI 匯入',
+      checked: !!meId,
+      reason: meId ? '' : '請選誰付',
+    }));
 }

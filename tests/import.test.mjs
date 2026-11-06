@@ -70,3 +70,22 @@ test('匯入：找不到標題列時說明', () => {
   const { error } = rowsToItems(parseTable('12/25\t飯店\t2700'), { members, today });
   assert.match(error, /標題列/);
 });
+
+test('匯入：標題不同但日期、幣別、金額相同 → 可能重複', () => {
+  const items = [{ date: '2026-12-26', currency: 'JPY', amount: 12280, title: 'JR 特急 名古屋→高山', checked: true }];
+  const [it] = markDuplicates(items, [{ date: '2026-12-26', currency: 'JPY', amount: 12280, title: 'JR 特急ひだ3號' }]);
+  assert.equal(it.checked, false);
+  assert.match(it.reason, /可能和「JR 特急ひだ3號」重複/);
+});
+
+test('匯入：AI 結果轉成清單', async () => {
+  const { aiToItems } = await import('../js/importer.js');
+  const out = aiToItems([
+    { date: '2026-12-25', title: 'VIA INN 名古屋 住宿', amount: 2700, currency: 'TWD', category: 'lodging' },
+    { date: '12/26', title: 'JR 特急', amount: 12280, currency: 'XXX', category: 'nope' },
+    { title: '繳款', amount: 0, currency: 'TWD' },
+  ], { meId: 'a', currencies: ['TWD', 'JPY'], categories: ['lodging', 'transport', 'other'], guess: () => 'transport', today });
+  assert.equal(out.length, 2);
+  assert.deepEqual([out[0].payerId, out[0].checked, out[0].payMethod], ['a', true, 'card']);
+  assert.deepEqual([out[1].currency, out[1].category, out[1].date], ['TWD', 'transport', '2026-12-26']);
+});

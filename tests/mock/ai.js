@@ -31,3 +31,14 @@ export function compressImage(file) {
     fr.readAsDataURL(file);
   });
 }
+
+// 測試用：批次匯入的 AI，回傳固定的信用卡明細
+export async function extractExpenses({ images = [], text = '' }) {
+  await new Promise((r) => setTimeout(r, 300));
+  window.__lastExtract = { images: images.length, text };
+  return [
+    { date: '2026-12-25', title: '測試飯店 名古屋 住宿', amount: 2500, currency: 'TWD', category: 'lodging' },
+    { date: '2026-12-26', title: 'JR 特急 名古屋→高山', amount: 10000, currency: 'JPY', category: 'transport' },
+    { date: '', title: 'Klook eSIM', amount: 1400, currency: 'TWD', category: 'other' },
+  ];
+}

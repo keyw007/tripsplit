@@ -178,6 +178,37 @@ export async function parseTextWithAi(text, { memberNames, meName, defaultCurren
   return generateJson([prompt], schema, 'minimal');
 }
 
+// 批次匯入：從信用卡明細、訂房紀錄、訂單確認信等截圖或文字，讀出每一筆消費
+export async function extractExpenses({ images = [], text = '', defaultCurrency, today }) {
+  const S = aiMod?.Schema || (await ensureAi(), aiMod.Schema);
+  const schema = S.object({
+    properties: {
+      items: S.array({
+        items: S.object({
+          properties: {
+            date: S.string({ description: '消費或入住日期 YYYY-MM-DD；只有月日時選離今天最近的年份；看不出來就空字串' }),
+            title: S.string({ description: '繁體中文短標題，例如「VIA INN 名古屋 住宿」「JR 特急 名古屋→高山」，店名保留原文' }),
+            amount: S.number({ description: '實際付款或刷卡金額（正數）' }),
+            currency: S.string({ description: 'ISO 幣別代碼，例如 TWD、JPY' }),
+            category: S.enumString({ enum: categoryIds }),
+          },
+          optionalProperties: ['date'],
+        }),
+      }),
+    },
+  });
+  const prompt = [
+    '這是旅行相關的信用卡交易明細、訂房紀錄、訂單或確認信（截圖或文字）。請列出每一筆消費，以 JSON 回傳。',
+    '只列實際的消費；不要列繳款、退款、回饋、分期利息、總計、小計、餘額。',
+    '同一筆訂單只列一次。金額用實際刷卡或付款的幣別與金額（信用卡帳單通常是台幣入帳金額）。',
+    `沒有明確幣別時用 ${defaultCurrency}。今天是 ${today}。`,
+    text ? `內容：\n${text}` : '',
+  ].join('\n');
+  const parts = [prompt, ...images.map((b64) => ({ inlineData: { mimeType: 'image/jpeg', data: b64 } }))];
+  const r = await generateJson(parts, schema, 'low');
+  return r.items || [];
+}
+
 // 把照片縮小並轉成 JPEG base64（收據文字需要解析度，長邊 1600px；品質 0.72 讓檔案小一點、上傳快一點）
 export function compressImage(file, maxSide = 1600, quality = 0.72) {
   return new Promise((resolve, reject) => {

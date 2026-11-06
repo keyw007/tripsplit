@@ -14,7 +14,7 @@ import { getMe, setMe, getPref, setPref, queueReceipt, listReceipts, removeRecei
 import { APP_VERSION } from './config.js';
 import { helpHtml, platform, isStandalone } from './help.js';
 import { fetchRates } from './rates.js';
-import { parseTable, rowsToItems, markDuplicates } from './importer.js';
+import { parseTable, rowsToItems, markDuplicates, aiToItems } from './importer.js';
 
 const CURRENCIES = ['TWD', 'JPY', 'USD', 'KRW', 'EUR', 'HKD', 'CNY', 'THB'];
 const TABS = [
@@ -296,7 +296,7 @@ function tabList() {
     </div>`;
   html += myCashCard();
   if (!exps.length) {
-    html += `<div class="empty">還沒有開支。<br>按下面的按鈕新增，或用語音、拍明細。<br><button class="link-btn" data-act="import">📥 事先刷卡的費用，可以從試算表匯入</button></div>`;
+    html += `<div class="empty">還沒有開支。<br>按下面的按鈕新增，或用語音、拍明細。<br><button class="link-btn" data-act="import">📥 事先刷卡的費用，可以從試算表或截圖匯入</button></div>`;
     return html;
   }
   const byDay = new Map();
@@ -406,7 +406,7 @@ function tabSettings() {
       <label class="row"><input type="checkbox" id="set-ai" ${aiEnabled() ? 'checked' : ''}><span class="grow">有網路時，拍明細與語音用 AI 解析</span></label>
       <p class="muted small">關掉時，語音改用手機內建規則解析；拍明細只能存起來手動輸入。</p></div>
     <div class="card"><h2>資料</h2>
-      <button class="btn block" data-act="import">📥 從試算表匯入（例如事先刷卡的住宿、車票）</button>
+      <button class="btn block" data-act="import">📥 批次匯入（試算表、信用卡明細截圖）</button>
       <div style="height:8px"></div>
       <button class="btn block" data-act="export">匯出 CSV（可匯入 Google 試算表）</button>
       ${isOwner ? '<div style="height:8px"></div><button class="btn danger block" data-act="delete-trip">刪除這趟旅行</button>' : ''}
@@ -737,27 +737,56 @@ function sheetImport() {
   const t = S.trip;
   let items = [];
   const body = openSheet((b) => {
-    b.innerHTML = `<h3>📥 從試算表匯入</h3>
-      <p class="muted small" style="margin-top:-6px">在 Google 試算表選取要匯入的範圍（<b>連第一列標題一起</b>）→ 複製 → 貼到下面。也可以選下載的 CSV 檔。<br>
-      認得的欄位：日期、項目、類別、TWD、JPY、「${esc(t.members.map((m) => m.name).join('／'))} 先付」、付款方式、狀態、備註、各自付。</p>
-      <textarea id="im-text" placeholder="貼上試算表內容" style="min-height:120px"></textarea>
+    const ai = S.online && aiEnabled();
+    b.innerHTML = `<h3>📥 批次匯入</h3>
+      <p class="muted small" style="margin-top:-6px"><b>試算表</b>：選取範圍（<b>連第一列標題一起</b>）→ 複製 → 貼到下面，或選 CSV 檔。
+      欄位：日期、項目、類別、TWD、JPY、「${esc(t.members.map((m) => m.name).join('／'))} 先付」、付款方式、狀態、備註、各自付。<br>
+      <b>其他</b>：信用卡明細、訂房紀錄的<b>截圖</b>，或貼上確認信的文字，由 AI 讀出每一筆${ai ? '' : '（需要網路，且設定裡開啟 AI）'}。</p>
+      <textarea id="im-text" placeholder="貼上試算表內容或確認信文字" style="min-height:110px"></textarea>
       <input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
-      <div class="foot"><button class="btn" data-act="im-pick">選 CSV 檔</button><button class="btn primary" data-act="im-read">讀取</button></div>`;
+      <input type="file" id="im-shots" accept="image/*" multiple hidden>
+      <div class="row" style="margin:8px 0"><button class="btn grow" data-act="im-pick">選 CSV 檔</button><button class="btn grow" data-act="im-shot" ${ai ? '' : 'disabled'}>📷 截圖（AI）</button></div>
+      <div class="foot"><button class="btn" data-act="close">取消</button><button class="btn primary" data-act="im-read">讀取</button></div>`;
   });
 
+  // AI 讀截圖或文字（試算表格式以外的都走這裡）
+  async function readWithAi({ images = [], text = '' }) {
+    body.innerHTML = `<h3>AI 讀取中…</h3><p class="muted" style="text-align:center"><span class="spinner"></span> ${images.length ? `${images.length} 張截圖` : '文字'}，大約 5–20 秒</p>`;
+    const t0 = performance.now();
+    try {
+      const aiMod = await import('./ai.js');
+      const list = await withTimeout(aiMod.extractExpenses({ images, text, defaultCurrency: t.defaultCurrency || base(), today: todayStr() }), 60000);
+      const got = aiToItems(list, { meId: S.meId, currencies: CURRENCIES, categories: CATEGORIES.map((c) => c.id), guess: guessCategory });
+      for (const x of got) x.date ||= todayStr(); // 看不出日期的先用今天，清單上可以看到再改
+      if (!got.length) { toast('AI 沒有找到消費，換一張截圖或手動輸入', 5000); closeSheet(); return; }
+      items = markDuplicates(got, S.expenses);
+      source = `AI 讀取・${secondsSince(t0)}`;
+      review();
+    } catch (err) {
+      console.error(err);
+      toast(`AI 讀取失敗：${String(err?.message || err).slice(0, 120)}`, 6000);
+      closeSheet();
+    }
+  }
+  let source = '';
+
   function read(text) {
+    if (!text.trim()) { toast('請先貼上內容，或選檔案、截圖'); return; }
     const { items: list, error } = rowsToItems(parseTable(text), { members: t.members });
+    // 不是有標題列的試算表（例如確認信文字）→ 交給 AI
+    if (error && /標題列/.test(error) && S.online && aiEnabled()) { readWithAi({ text }); return; }
     if (error) { toast(error, 5000); return; }
     if (!list.length) { toast('沒有找到有金額的項目'); return; }
     items = markDuplicates(list, S.expenses);
+    source = '試算表';
     review();
   }
 
   function review() {
     const n = items.filter((x) => x.checked).length;
     const payerOpts = (sel) => t.members.map((m) => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
-    body.innerHTML = `<h3>確認要匯入的開支</h3>
-      <p class="muted small" style="margin-top:-6px">共 ${items.length} 筆，預設勾選「有指定誰付、事先刷卡或已付」的。匯入後都是<b>全部人平分</b>，之後可以再個別修改。</p>
+    body.innerHTML = `<h3>確認要匯入的開支 <span class="muted small">${esc(source)}</span></h3>
+      <p class="muted small" style="margin-top:-6px">共 ${items.length} 筆。${source === '試算表' ? '預設勾選「有指定誰付、事先刷卡或已付」的。' : '<b>AI 讀的請核對金額與日期</b>，預設是你刷的卡。'}匯入後都是<b>全部人平分</b>，之後可以再個別修改。</p>
       <div class="im-list">${items.map((x, i) => `<div class="im-row ${x.checked ? '' : 'off'}">
         <input type="checkbox" data-im="${i}" ${x.checked ? 'checked' : ''} aria-label="匯入 ${esc(x.title)}">
         <div class="grow"><div class="t">${cat(x.category).icon} ${esc(x.title)}</div>
@@ -775,7 +804,7 @@ function sheetImport() {
         type: 'expense', title: x.title, amount: x.amount, currency: x.currency, payerId: x.payerId,
         date: x.date || todayStr(), category: x.category, splitMode: 'equal',
         shares: Object.fromEntries(t.members.map((m) => [m.id, 1])), payMethod: x.payMethod,
-        note: x.note ? `${x.note}（試算表匯入）` : '試算表匯入',
+        note: x.note === 'AI 匯入' ? 'AI 匯入' : x.note ? `${x.note}（試算表匯入）` : '試算表匯入',
       });
     }
     closeSheet();
@@ -786,12 +815,21 @@ function sheetImport() {
     const b = ev.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'im-pick') body.querySelector('#im-file').click();
+    if (b.dataset.act === 'im-shot') body.querySelector('#im-shots').click();
     if (b.dataset.act === 'im-read') read(body.querySelector('#im-text').value);
     if (b.dataset.act === 'im-save') save();
   });
   body.addEventListener('change', async (ev) => {
     const el = ev.target;
     if (el.id === 'im-file' && el.files?.[0]) { read(await el.files[0].text()); return; }
+    if (el.id === 'im-shots' && el.files?.length) {
+      const { compressImage } = await import('./ai.js');
+      const images = [];
+      for (const f of [...el.files].slice(0, 6)) { try { images.push((await compressImage(f)).base64); } catch { /* 讀不到的略過 */ } }
+      if (el.files.length > 6) toast('一次最多 6 張，只讀前 6 張');
+      if (images.length) readWithAi({ images }); else toast('照片讀取失敗');
+      return;
+    }
     if (el.dataset.im != null) { items[Number(el.dataset.im)].checked = el.checked; review(); }
     if (el.dataset.imPayer != null) { items[Number(el.dataset.imPayer)].payerId = el.value || null; }
   });
@@ -1269,7 +1307,7 @@ function sheetReceipts() {
 // ---------- 事件 ----------
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-act]');
-  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply', 'pay', 'im-pick', 'im-read', 'im-save'].includes(b.dataset.act)) return;
+  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply', 'pay', 'im-pick', 'im-shot', 'im-read', 'im-save'].includes(b.dataset.act)) return;
   const act = b.dataset.act;
   const t = S.trip;
   switch (act) {
