@@ -14,6 +14,7 @@ import { getMe, setMe, getPref, setPref, queueReceipt, listReceipts, removeRecei
 import { APP_VERSION } from './config.js';
 import { helpHtml, platform, isStandalone } from './help.js';
 import { fetchRates } from './rates.js';
+import { parseTable, rowsToItems, markDuplicates } from './importer.js';
 
 const CURRENCIES = ['TWD', 'JPY', 'USD', 'KRW', 'EUR', 'HKD', 'CNY', 'THB'];
 const TABS = [
@@ -295,7 +296,7 @@ function tabList() {
     </div>`;
   html += myCashCard();
   if (!exps.length) {
-    html += `<div class="empty">還沒有開支。<br>按下面的按鈕新增，或用語音、拍明細。</div>`;
+    html += `<div class="empty">還沒有開支。<br>按下面的按鈕新增，或用語音、拍明細。<br><button class="link-btn" data-act="import">📥 事先刷卡的費用，可以從試算表匯入</button></div>`;
     return html;
   }
   const byDay = new Map();
@@ -405,6 +406,8 @@ function tabSettings() {
       <label class="row"><input type="checkbox" id="set-ai" ${aiEnabled() ? 'checked' : ''}><span class="grow">有網路時，拍明細與語音用 AI 解析</span></label>
       <p class="muted small">關掉時，語音改用手機內建規則解析；拍明細只能存起來手動輸入。</p></div>
     <div class="card"><h2>資料</h2>
+      <button class="btn block" data-act="import">📥 從試算表匯入（例如事先刷卡的住宿、車票）</button>
+      <div style="height:8px"></div>
       <button class="btn block" data-act="export">匯出 CSV（可匯入 Google 試算表）</button>
       ${isOwner ? '<div style="height:8px"></div><button class="btn danger block" data-act="delete-trip">刪除這趟旅行</button>' : ''}
       <p class="muted small"><button class="link-btn" data-act="check-update">v${APP_VERSION}（點此檢查更新）</button>・帳號 ${esc(S.user.uid.slice(0, 6))}</p></div>
@@ -727,6 +730,71 @@ function saveCashCount() {
   if (Math.abs(diff) < 10 ** -decimalsOf(cur) / 2) { toast('和帳面一樣，不用修正 👍'); return; }
   saveExpense(S.tripId, S.user.uid, { type: 'cash', kind: 'adj', memberId: who, currency: cur, amount: diff, counted, date: todayStr(), note: '清點' });
   toast(`已修正 ${formatMoney(diff, cur)}`);
+}
+
+// ---------- 從試算表匯入 ----------
+function sheetImport() {
+  const t = S.trip;
+  let items = [];
+  const body = openSheet((b) => {
+    b.innerHTML = `<h3>📥 從試算表匯入</h3>
+      <p class="muted small" style="margin-top:-6px">在 Google 試算表選取要匯入的範圍（<b>連第一列標題一起</b>）→ 複製 → 貼到下面。也可以選下載的 CSV 檔。<br>
+      認得的欄位：日期、項目、類別、TWD、JPY、「${esc(t.members.map((m) => m.name).join('／'))} 先付」、付款方式、狀態、備註、各自付。</p>
+      <textarea id="im-text" placeholder="貼上試算表內容" style="min-height:120px"></textarea>
+      <input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
+      <div class="foot"><button class="btn" data-act="im-pick">選 CSV 檔</button><button class="btn primary" data-act="im-read">讀取</button></div>`;
+  });
+
+  function read(text) {
+    const { items: list, error } = rowsToItems(parseTable(text), { members: t.members });
+    if (error) { toast(error, 5000); return; }
+    if (!list.length) { toast('沒有找到有金額的項目'); return; }
+    items = markDuplicates(list, S.expenses);
+    review();
+  }
+
+  function review() {
+    const n = items.filter((x) => x.checked).length;
+    const payerOpts = (sel) => t.members.map((m) => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+    body.innerHTML = `<h3>確認要匯入的開支</h3>
+      <p class="muted small" style="margin-top:-6px">共 ${items.length} 筆，預設勾選「有指定誰付、事先刷卡或已付」的。匯入後都是<b>全部人平分</b>，之後可以再個別修改。</p>
+      <div class="im-list">${items.map((x, i) => `<div class="im-row ${x.checked ? '' : 'off'}">
+        <input type="checkbox" data-im="${i}" ${x.checked ? 'checked' : ''} aria-label="匯入 ${esc(x.title)}">
+        <div class="grow"><div class="t">${cat(x.category).icon} ${esc(x.title)}</div>
+          <div class="muted small">${esc(x.date ? fmtDay(x.date) : '')}・<select data-im-payer="${i}">${x.payerId ? '' : '<option value="">誰付？</option>'}${payerOpts(x.payerId)}</select> 付・${x.payMethod === 'cash' ? '💴 現金' : '💳 刷卡'}</div>
+          ${x.reason ? `<div class="small warn-text">${esc(x.reason)}</div>` : ''}</div>
+        <div class="amt">${formatMoney(x.amount, x.currency)}</div></div>`).join('')}</div>
+      <div class="foot"><button class="btn" data-act="close">取消</button><button class="btn primary" data-act="im-save" ${n ? '' : 'disabled'}>匯入 ${n} 筆</button></div>`;
+  }
+
+  function save() {
+    const chosen = items.filter((x) => x.checked);
+    if (chosen.some((x) => !x.payerId)) { toast('有勾選的項目還沒選誰付'); return; }
+    for (const x of chosen) {
+      saveExpense(S.tripId, S.user.uid, {
+        type: 'expense', title: x.title, amount: x.amount, currency: x.currency, payerId: x.payerId,
+        date: x.date || todayStr(), category: x.category, splitMode: 'equal',
+        shares: Object.fromEntries(t.members.map((m) => [m.id, 1])), payMethod: x.payMethod,
+        note: x.note ? `${x.note}（試算表匯入）` : '試算表匯入',
+      });
+    }
+    closeSheet();
+    toast(`已匯入 ${chosen.length} 筆${S.online ? '' : '，連上網路後會同步'}`, 3500);
+  }
+
+  body.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'im-pick') body.querySelector('#im-file').click();
+    if (b.dataset.act === 'im-read') read(body.querySelector('#im-text').value);
+    if (b.dataset.act === 'im-save') save();
+  });
+  body.addEventListener('change', async (ev) => {
+    const el = ev.target;
+    if (el.id === 'im-file' && el.files?.[0]) { read(await el.files[0].text()); return; }
+    if (el.dataset.im != null) { items[Number(el.dataset.im)].checked = el.checked; review(); }
+    if (el.dataset.imPayer != null) { items[Number(el.dataset.imPayer)].payerId = el.value || null; }
+  });
 }
 
 // ---------- 開支編輯 ----------
@@ -1201,7 +1269,7 @@ function sheetReceipts() {
 // ---------- 事件 ----------
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-act]');
-  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply', 'pay'].includes(b.dataset.act)) return;
+  if (!b || b.closest('.sheet-body') && ['type', 'cat', 'mode', 'item-member', 'del-exp', 'save-exp', 'v-mic', 'v-parse', 'ai-apply', 'pay', 'im-pick', 'im-read', 'im-save'].includes(b.dataset.act)) return;
   const act = b.dataset.act;
   const t = S.trip;
   switch (act) {
@@ -1210,6 +1278,7 @@ document.addEventListener('click', async (ev) => {
     case 'nt-create': doCreateTrip(); break;
     case 'check-update': checkForUpdateNow(); break;
     case 'cash-in': sheetCashIn(); break;
+    case 'import': sheetImport(); break;
     case 'cash-count': sheetCashCount(); break;
     case 'cash-save-in': saveCashIn(); break;
     case 'cash-save-count': saveCashCount(); break;

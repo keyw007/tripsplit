@@ -229,3 +229,14 @@ a.btn.block { display: flex; }
 .cash-amounts .big { font-size: 24px; font-weight: 800; }
 .cash-hist summary { cursor: pointer; padding: 6px 0; }
 .small-x { font-size: 16px; padding: 4px 8px; margin-left: 4px; color: var(--muted); background: none; border: 0; }
+
+/* 從試算表匯入 */
+.im-list { margin: 8px 0; }
+.im-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.im-row input[type=checkbox] { width: 22px; height: 22px; margin-top: 2px; flex: none; }
+.im-row .grow { flex: 1; min-width: 0; }
+.im-row .t { font-weight: 600; }
+.im-row .amt { font-weight: 700; white-space: nowrap; }
+.im-row.off .t, .im-row.off .amt { opacity: .55; }
+.im-row select { font-size: 13px; padding: 2px 4px; border-radius: 6px; width: auto; }
+.warn-text { color: var(--warn-text); }

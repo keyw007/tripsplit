@@ -25,6 +25,7 @@
 | `js/parse.js` | 語音／文字離線解析（純函式，有單元測試） |
 | `js/firebase.js` | 匿名登入、Google 綁定、Firestore 讀寫 |
 | `js/rates.js` | 自動抓匯率：currency-api（jsDelivr）→ currency-api（Cloudflare）→ ExchangeRate-API 依序嘗試，免金鑰、有 CORS |
+| `js/importer.js` | 從試算表匯入（貼上 Tab 分隔或 CSV）：依標題名稱找欄位，預設勾選「有指定誰付、事先刷卡或已付」的，其餘寫原因；純函式，有單元測試 |
 | `js/ai.js` | Firebase AI Logic（Gemini Developer API）＋ App Check；模型依序嘗試 `AI_MODELS` |
 | `js/store.js` | localStorage 設定、IndexedDB 待辨識照片佇列 |
 | `js/config.js` | Firebase 設定、`APP_CHECK` 金鑰、`AI_MODELS`、`APP_VERSION` |
@@ -53,17 +54,19 @@
 - **iPhone 不用網頁收音**（1.3.5）：`webkitSpeechRecognition` 在 iPhone 主畫面 App 會讓整個 App 卡死、要滑掉才能用（1.3.3 實測，WebKit 已知問題，JS 看門狗救不了）。iPhone 一律用鍵盤上的麥克風（iOS 聽寫），打開語音畫面時在同一個點擊裡 `focus()` 輸入框讓鍵盤跳出。Android 保留收音鈕＋看門狗（3 秒沒開始就 `abort()`、`micBroken` 後改用鍵盤麥克風；一次最多 20 秒；按停止 1.5 秒沒結束就強制停）。
 - **現金追蹤**（1.4.0）：現金紀錄存在 `expenses` 集合（`type: 'cash'`，`kind: 'in'` 換匯／領錢、`'adj'` 清點差額），載入時拆到 `S.cash`，所以分帳、結算、統計都不受影響，也不用改 Firestore 規則。開支／轉帳有 `payMethod: 'cash'|'card'`（舊資料沒有＝刷卡，不扣現金），每趟旅行記住上次的選擇。計算在 `money.js` 的 `cashBalances`、`exchangeAverages`。
 - **匯率**是整趟旅行共用（`trip.rates`），改了會重算所有開支，所以自動抓取只在「建立旅行」和「設定 → 🌐 抓最新匯率（預覽後按套用）」，不會自己默默更新。`trip.ratesInfo` 記錄抓取日期與來源。
+- **試算表匯入**（1.5.0）：格式照郁文的「20261225 日本十天九夜 費用明細」明細頁（日期｜項目｜類別｜TWD｜JPY｜約 TWD｜郁文 先付｜吳薰 先付｜付款方式｜狀態｜備註｜各自付）。台幣預付＋日圓現場付拆成兩筆（現場那筆不勾）；沒日期的放最早那天；只有月日時選離今天最近的年份。**repo 是公開的，測試資料用假的**，不要放真實試算表內容。
 - iOS 主畫面 App 與 Safari 分頁的儲存空間是分開的（匿名帳號不同），Google 綁定要在主畫面 App 裡做。
 
 ## 測試
 
 ```bash
-node --test tests/core.test.mjs            # money.js、parse.js 單元測試
+node --test tests/*.test.mjs               # money.js、parse.js、importer.js 單元測試
 python3 tests/ui_check.py /tmp/ui          # 完整畫面流程（tests/mock 假 Firebase／AI）截圖
 python3 tests/link_check.py /tmp/link      # 連結 Google 帳號流程
 python3 tests/update_check.py /tmp/upd      # 自動檢查更新（真的 service worker）
 python3 tests/voice_check.py /tmp/voice    # 語音：先離線再 AI、套用、收音卡住
 python3 tests/cash_check.py /tmp/cash      # 現金追蹤、自動抓匯率（模擬匯率 API）
+python3 tests/import_check.py /tmp/import  # 從試算表匯入（貼上、CSV 檔、重複）
 ```
 
 畫面測試用 Playwright 攔截 `js/firebase.js`、`js/ai.js` 換成 `tests/mock/`；新增 firebase.js 匯出函式時，mock 也要加同名函式。
