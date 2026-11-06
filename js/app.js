@@ -706,6 +706,7 @@ function sheetVoice() {
       b.innerHTML = '<span class="spinner"></span>';
       const draft = await parseVoice(text);
       sheetEditor(draft.draft, { source: draft.source });
+      if (draft.aiError) toast(`AI 解析失敗，改用離線解析：${draft.aiError}`, 6000);
     }
   });
 }
@@ -717,6 +718,7 @@ async function parseVoice(text) {
   const local = parseExpenseText(text, { members, meId, defaultCurrency: t.defaultCurrency || base() });
   let p = local;
   let source = '離線解析';
+  let aiError = '';
   if (S.online && aiEnabled()) {
     try {
       const { parseTextWithAi } = await import('./ai.js');
@@ -725,7 +727,7 @@ async function parseVoice(text) {
         meName: memberName(meId),
         defaultCurrency: t.defaultCurrency || base(),
         today: todayStr(),
-      }), 12000);
+      }), 20000);
       const findId = (n) => members.find((m) => n && (m.name === n || m.name.includes(n) || n.includes(m.name)))?.id;
       const partIds = (r.participantNames || []).map(findId).filter(Boolean);
       p = {
@@ -740,11 +742,14 @@ async function parseVoice(text) {
       source = 'AI 解析';
     } catch (err) {
       console.warn('AI 解析失敗，改用離線解析', err);
+      const msg = String(err?.message || err?.code || err);
+      aiError = msg === 'timeout' ? '等太久（超過 20 秒）' : msg.slice(0, 120);
     }
   }
   const ids = p.participantIds || t.members.map((m) => m.id);
   return {
     source,
+    aiError,
     draft: {
       title: p.title,
       amount: p.amount ?? '',
