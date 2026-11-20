@@ -733,6 +733,8 @@ function saveCashCount() {
 }
 
 // ---------- 從試算表匯入 ----------
+// 試算表範本（短網址，轉到 Google 試算表的「建立副本」頁；見 template/index.html）
+const TEMPLATE_URL = 'https://keyw007.github.io/tripsplit/template/';
 function sheetImport() {
   const t = S.trip;
   let items = [];
@@ -743,6 +745,7 @@ function sheetImport() {
       欄位：日期、項目、類別、TWD、JPY、「${esc(t.members.map((m) => m.name).join('／'))} 先付」、付款方式、狀態、備註、各自付。<br>
       <b>其他</b>：信用卡明細、訂房紀錄的<b>截圖</b>，或貼上確認信的文字，由 AI 讀出每一筆${ai ? '' : '（需要網路，且設定裡開啟 AI）'}。</p>
       <textarea id="im-text" placeholder="貼上試算表內容或確認信文字" style="min-height:110px"></textarea>
+      <p class="muted small" style="margin:6px 0 0">還沒有試算表？<a href="${TEMPLATE_URL}" target="_blank" rel="noopener">📄 取得試算表範本</a>（複製到你的 Google 雲端硬碟）</p>
       <input type="file" id="im-file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
       <input type="file" id="im-shots" accept="image/*" multiple hidden>
       <div class="row" style="margin:8px 0"><button class="btn grow" data-act="im-pick">選 CSV 檔</button><button class="btn grow" data-act="im-shot" ${ai ? '' : 'disabled'}>📷 截圖（AI）</button></div>

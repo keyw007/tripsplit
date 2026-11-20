@@ -79,7 +79,7 @@ export function helpHtml() {
       <h4>📥 批次匯入</h4>
       <p>事先刷卡的住宿、車票等，可以一次匯入：<b>⚙️ 設定 → 資料 → 批次匯入</b>。</p>
       <p><b>信用卡明細、訂房紀錄</b>：按 <b>📷 截圖（AI）</b>，一次可選最多 6 張截圖；或把確認信的文字貼上按讀取。AI 會列出每一筆，預設是你刷的卡，<b>請核對金額和日期</b>。</p>
-      <p><b>Google 試算表</b>：</p>
+      <p><b>Google 試算表</b>：可以用現成的範本，打開 <a href="https://keyw007.github.io/tripsplit/template/" target="_blank" rel="noopener">keyw007.github.io/tripsplit/template</a> → 建立副本，就會複製到你的 Google 雲端硬碟。範本已經排好 App 認得的欄位，出發前可以先把已知的花費填進去，摘要會算出每人大概多少、要帶多少日幣。</p>
       <ol>
         <li>在試算表選取要匯入的範圍，<b>連第一列標題一起</b>，按複製（也可以下載成 CSV 檔再選檔案）</li>
         <li>貼到 App，按<b>讀取</b></li>
