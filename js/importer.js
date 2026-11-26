@@ -117,7 +117,11 @@ export function rowsToItems(rows, { members, today = new Date() }) {
     const note = get(r, col.note);
     const each = isTrue(get(r, col.each));
     const base = { title, category: categoryOf(get(r, col.cat), title), date: parseDate(get(r, col.date), today), payerId: payers[0] || null, note, status, method, each, multiPayer: payers.length > 1 };
-    if (twd > 0) {
+    if (/(日圓|日幣|日元)刷卡/.test(method)) {
+      // 日圓刷卡：用 TWD 欄自己填的實際刷卡台幣（信用卡帳單金額），不用匯率換算；日幣金額寫在備註
+      if (twd > 0) raw.push({ ...base, amount: twd, currency: 'TWD', payMethod: 'card', note: [note, jpy > 0 ? `刷卡 ¥${jpy.toLocaleString('en-US')}` : ''].filter(Boolean).join('；') });
+      else raw.push({ ...base, amount: jpy, currency: 'JPY', payMethod: 'card', needTwd: true });
+    } else if (twd > 0) {
       raw.push({ ...base, amount: twd, currency: 'TWD', payMethod: /現金/.test(method) && !/日圓/.test(method) ? 'cash' : 'card' });
       // 台幣預付＋日圓現場付：日圓部分另一筆，到時候付了再記
       if (jpy > 0) raw.push({ ...base, title: `${title}（現場付）`, amount: jpy, currency: 'JPY', payMethod: 'cash', onSite: true });
@@ -133,9 +137,10 @@ export function rowsToItems(rows, { members, today = new Date() }) {
     else if (!x.payerId) reason = '沒有勾誰先付';
     else if (x.multiPayer) reason = '勾了不只一位付款人';
     else if (/預估/.test(x.status)) reason = '還是預估金額';
+    else if (x.needTwd) reason = '日圓刷卡：請先在 TWD 欄填實際刷卡的台幣';
     else if (x.onSite) reason = '現場才付，到時候再記';
     else if (!/刷卡/.test(x.method) && !/已付/.test(x.status)) reason = `${x.method || '付款方式未定'}，付了再記`;
-    const { status, method, each, multiPayer, onSite, ...rest } = x;
+    const { status, method, each, multiPayer, onSite, needTwd, ...rest } = x;
     return { ...rest, date: x.date || first, checked: !reason, reason };
   });
   return { items, error: '' };

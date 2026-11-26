@@ -43,11 +43,13 @@ test('匯入：預設勾選事先刷卡、已付的；其他說明原因', () =>
   assert.equal(by('測試溫泉飯店').checked, true);
   assert.equal(by('測試溫泉飯店（現場付）').currency, 'JPY');
   assert.equal(by('測試溫泉飯店（現場付）').checked, false);
-  // 日圓刷卡已付 → 勾
-  assert.equal(by('測試山屋（二食）').checked, true);
+  // 日圓刷卡但 TWD 沒填 → 不換算、不勾，請使用者先填實際刷卡台幣
+  assert.equal(by('測試山屋（二食）').checked, false);
+  assert.match(by('測試山屋（二食）').reason, /填實際刷卡的台幣/);
   assert.equal(by('測試山屋（二食）').category, 'lodging');
   assert.equal(by('測試特急').payerId, 'b');
   assert.equal(by('測試特急').payMethod, 'card');
+  assert.equal(by('測試特急').checked, false);
   // 日圓現金、未定、預估、各自付 → 不勾
   assert.equal(by('測試鉱泉').checked, false);
   assert.equal(by('測試鉱泉').payMethod, 'cash');
@@ -55,7 +57,7 @@ test('匯入：預設勾選事先刷卡、已付的；其他說明原因', () =>
   assert.match(by('晚餐').reason, /預估|沒有勾/);
   assert.match(by('測試巴士').reason, /各自付/);
   assert.equal(by('測試 eSIM ×2').category, 'other');
-  assert.equal(items.filter((i) => i.checked).length, 6); // 機票、兩間飯店、山屋、特急、eSIM
+  assert.equal(items.filter((i) => i.checked).length, 4); // 機票、兩間飯店、eSIM（日圓刷卡的山屋、特急還沒填台幣）
 });
 
 test('匯入：已經匯入過的不勾', () => {
@@ -97,4 +99,13 @@ test('匯入：範本的「旅伴A 先付」對應第一位成員', () => {
   assert.equal(error, '');
   assert.equal(items[0].payerId, 'b');
   assert.equal(items[0].checked, true);
+});
+
+test('匯入：日圓刷卡填了 TWD → 用實際台幣，一筆，日幣寫備註', () => {
+  const rows = parseTable([HEAD.join('\t'),
+    ['12/26', '特急', '交通', '2,598', '¥12,280', '', 'TRUE', 'FALSE', '日圓刷卡', '已付', '11/26 開賣', 'FALSE'].join('\t')].join('\n'));
+  const { items } = rowsToItems(rows, { members, today });
+  assert.equal(items.length, 1);
+  assert.deepEqual([items[0].currency, items[0].amount, items[0].checked, items[0].payMethod], ['TWD', 2598, true, 'card']);
+  assert.equal(items[0].note, '11/26 開賣；刷卡 ¥12,280');
 });
